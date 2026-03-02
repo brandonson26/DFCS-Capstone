@@ -10,16 +10,31 @@ Pipeline split:
   - find_zeroth_order.py: box+centroid for zeroth
   - find_first_order.py: fixed 400x100 direction boxes + compact point for first order
 
-Outputs:
+Outputs (written first into outdir root each run):
   - 02_points_and_line.png
   - 03_spectrum_pixel.png
   - spectrum_with_characterization.csv
+
+Routing:
+  - Each run creates a subfolder named by the FITS stem under:
+      <outdir>/good_data/<fits_stem>/              (if NOT star streak)
+      <outdir>/star_streak/<fits_stem>/            (if star streak)
+      <outdir>/overexposure/<fits_stem>/           (if overexposed)
+      <outdir>/partial_first_order/<fits_stem>/    (if partial 1st order flagged)
+      <outdir>/background_gradient/<fits_stem>/    (if background gradient flagged)
+      <outdir>/low_snr/<fits_stem>/                (if low SNR flagged)
+  - If multiple flags are true, outputs are copied into ALL matching folders.
+  - After copying, root outputs are removed.
+
+Batch:
+  - --batch processes all .fit/.fits inside --data-dir (default: data)
 """
 
 import argparse
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+import shutil
 
 import numpy as np
 from astropy.io import fits
@@ -32,6 +47,24 @@ from scipy.ndimage import gaussian_filter, map_coordinates
 
 from find_zeroth_order import find_zeroth_order, BoxResult as ZerothBox
 from find_first_order import find_first_order, FirstOrderResult
+
+# NEW: partial first-order detector (photon-based)
+from partial_first_order import partial_first_order_photon_check, path_reaches_edge
+
+# NEW: background gradient detector (whole-image)
+from background_gradient import detect_background_gradient
+
+# NEW: low SNR detector (1D extracted spectrum)
+from low_snr import detect_low_snr
+
+# optional: star streak detection on extracted 1D profile
+try:
+    from star_streak import detect_star_streak
+except Exception:
+    detect_star_streak = None  # type: ignore
+
+# overexposure detector
+from overexposure import detect_overexposure_first
 
 
 # ----------------------------- utilities -----------------------------
@@ -90,7 +123,7 @@ def header_plausibility(hdr: fits.Header) -> List[str]:
     return notes
 
 
-# ----------------------------- background -----------------------------
+# ----------------------------- background (used for extraction image) -----------------------------
 
 def estimate_background(img: np.ndarray, tile: int = 64) -> np.ndarray:
     img = np.asarray(img, dtype=float)
@@ -232,12 +265,10 @@ def save_points_and_line_png(outdir: Path,
     disp = safe_log_display(percentile_clip(img))
     plt.imshow(disp, origin="lower", aspect="auto")
 
-    # points only
     plt.scatter([zeroth.cx], [zeroth.cy], s=80, marker="x", c="red", label="Zeroth")
     fo = first_res.first_point
     plt.scatter([fo.cx], [fo.cy], s=70, marker="o", c="cyan", label="First")
 
-    # extraction line
     plt.plot([xL1, xL2], [yL1, yL2], linewidth=1.6)
     plt.title(f"Points + extraction path | direction={first_res.direction}")
     plt.legend(loc="best", frameon=False)
@@ -267,7 +298,15 @@ def write_csv(csv_path: Path,
               zeroth: ZerothBox,
               first_res: FirstOrderResult,
               line_pts: Tuple[float,float,float,float],
-              dist: np.ndarray, xs: np.ndarray, ys: np.ndarray, flux: np.ndarray) -> None:
+              dist: np.ndarray, xs: np.ndarray, ys: np.ndarray, flux: np.ndarray,
+              partial_first_order_flag: Optional[bool] = None,
+              partial_metrics: Optional[Dict[str, Any]] = None,
+              reaches_edge: Optional[bool] = None,
+              edge_dist_px: Optional[float] = None,
+              background_gradient_flag: Optional[bool] = None,
+              background_gradient_info: Optional[Dict[str, Any]] = None,
+              low_snr_flag: Optional[bool] = None,
+              low_snr_info: Optional[Dict[str, Any]] = None) -> None:
     with csv_path.open("w", encoding="utf-8") as f:
         f.write(f"# source_fits={fits_path}\n")
         f.write(f"# hdu_index={hdu_index}\n")
@@ -292,55 +331,117 @@ def write_csv(csv_path: Path,
         f.write(f"# line_start=({x1:.3f},{y1:.3f})\n")
         f.write(f"# line_end=({x2:.3f},{y2:.3f})\n")
 
+        # ---- partial first-order characterization ----
+        if partial_first_order_flag is not None:
+            f.write(f"# partial_first_order={bool(partial_first_order_flag)}\n")
+        if reaches_edge is not None:
+            f.write(f"# extraction_path_reaches_edge={bool(reaches_edge)}\n")
+        if edge_dist_px is not None:
+            try:
+                f.write(f"# extraction_edge_dist_px={float(edge_dist_px):.6g}\n")
+            except Exception:
+                pass
+        if partial_metrics is not None:
+            for k in ["after_mean", "end_mean", "baseline", "after_net", "end_net", "ratio"]:
+                if k in partial_metrics:
+                    try:
+                        f.write(f"# partial_{k}={float(partial_metrics[k]):.10g}\n")
+                    except Exception:
+                        pass
+
+        # ---- background gradient characterization ----
+        if background_gradient_flag is not None:
+            f.write(f"# background_gradient={bool(background_gradient_flag)}\n")
+        if background_gradient_info is not None:
+            for k in ["plane_delta_counts", "delta_fraction_of_median", "residual_sigma",
+                      "strength_vs_noise", "vlf_sigma", "vlf_var_fraction", "mask_coverage_frac"]:
+                if k in background_gradient_info:
+                    try:
+                        f.write(f"# bggrad_{k}={float(background_gradient_info[k]):.10g}\n")
+                    except Exception:
+                        pass
+            plane = background_gradient_info.get("plane", {}) if isinstance(background_gradient_info, dict) else {}
+            if isinstance(plane, dict):
+                for k in ["a", "b", "c", "slope_mag"]:
+                    if k in plane:
+                        try:
+                            f.write(f"# bggrad_plane_{k}={float(plane[k]):.10g}\n")
+                        except Exception:
+                            pass
+
+        # ---- low SNR characterization ----
+        if low_snr_flag is not None:
+            f.write(f"# low_snr={bool(low_snr_flag)}\n")
+        if low_snr_info is not None:
+            for k in ["snr_median", "snr_p25", "baseline", "noise_sigma", "post_len", "i_after"]:
+                if k in low_snr_info:
+                    try:
+                        f.write(f"# lowsnr_{k}={float(low_snr_info[k]):.10g}\n")
+                    except Exception:
+                        pass
+
         f.write("distance_pix,x,y,flux\n")
         arr = np.column_stack([dist, xs, ys, flux])
         np.savetxt(f, arr, delimiter=",", fmt="%.10g")
 
 
-# ----------------------------- main -----------------------------
+# ----------------------------- star streak outputs -----------------------------
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Capstone: DS9-like spectra extraction (box-based zeroth + fixed first-order boxes).")
-    ap.add_argument("--fits", required=True, help="Path to FITS file")
-    ap.add_argument("--outdir", default="outputs_capstone", help="Output directory")
-    ap.add_argument("--ext", type=int, default=None, help="HDU index override (default: auto best)")
+def save_star_streak_detection_png(streak_dir: Path,
+                                   s: np.ndarray,
+                                   profile: np.ndarray,
+                                   smoothed: np.ndarray,
+                                   peaks: np.ndarray,
+                                   valid_mask: List[bool],
+                                   streak: bool) -> Path:
+    streak_dir.mkdir(parents=True, exist_ok=True)
+    out_png = streak_dir / "streak_detection.png"
 
-    # background
-    ap.add_argument("--bg-tile", type=int, default=64)
-    ap.add_argument("--smooth", type=float, default=1.0, help="Smoothing for detection image (bg-sub)")
+    plt.figure(figsize=(9, 4))
+    plt.plot(s, profile)
+    plt.plot(s, smoothed, linewidth=2)
 
-    # zeroth
-    ap.add_argument("--zeroth-box-w", type=int, default=100)
-    ap.add_argument("--zeroth-box-h", type=int, default=100)
-    ap.add_argument("--zeroth-step", type=int, default=4)
-    ap.add_argument("--zeroth-score-mode", choices=["integrated", "compact_flux", "contrast"], default="compact_flux")
+    for i, pk in enumerate(peaks):
+        try:
+            xpk = s[int(pk)]
+        except Exception:
+            continue
+        ok = (i < len(valid_mask) and valid_mask[i])
+        plt.axvline(xpk, color=("green" if ok else "red"), linestyle="--", linewidth=1)
 
-    # first-order fixed boxes (your standard)
-    ap.add_argument("--first-fixed-w", type=int, default=400)
-    ap.add_argument("--first-fixed-h", type=int, default=100)
-    ap.add_argument("--first-pad", type=int, default=5)
-    ap.add_argument("--first-inner-w", type=int, default=21, help="Inner window size to find compact point")
-    ap.add_argument("--first-inner-h", type=int, default=21)
+    plt.xlabel("Distance along extraction path (pixels)")
+    plt.ylabel("Flux (image units)")
+    plt.title("Spectrum (DS9-like Plot2D) + Star-streak peaks")
+    plt.tight_layout()
+    plt.savefig(out_png, dpi=170)
+    plt.close()
+    return out_png
 
-    # extraction line + sampling
-    ap.add_argument("--pre", type=float, default=30.0, help="Pixels to start before zeroth along the line")
-    ap.add_argument("--profile-on", choices=["raw", "bgsub"], default="bgsub")
-    ap.add_argument("--width", type=int, default=5, help="Line width averaged perpendicular to path (DS9-like)")
-    ap.add_argument("--reducer", choices=["mean", "median"], default="mean")
-    ap.add_argument("--step", type=float, default=1.0)
+def write_star_streak_csv(streak_dir: Path,
+                          fits_path: Path,
+                          streak: bool,
+                          peaks: np.ndarray,
+                          valid_mask: List[bool]) -> Path:
+    streak_dir.mkdir(parents=True, exist_ok=True)
+    out_csv = streak_dir / "streak_summary.csv"
+    peaks_list = [int(x) for x in np.asarray(peaks).tolist()] if peaks is not None else []
+    with out_csv.open("w", encoding="utf-8") as f:
+        f.write("fits,streak_detected,peak_indices,valid_mask\n")
+        f.write(f"{fits_path.name},{bool(streak)},{peaks_list},{valid_mask}\n")
+    return out_csv
 
-    args = ap.parse_args()
 
-    fits_path = Path(args.fits)
+# ----------------------------- core run -----------------------------
+
+def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
     if not fits_path.exists():
-        raise SystemExit(f"File not found: {fits_path}")
+        print(f"[SKIP] File not found: {fits_path}")
+        return 1
 
-    base_outdir = Path(args.outdir)
-    fits_outdir = base_outdir / fits_path.stem
-    ensure_dir(fits_outdir)
+    outdir = Path(args.outdir)
+    ensure_dir(outdir)
 
     with fits.open(fits_path) as hdul:
-        # inventory & verify HDU0
         hdu0_ok = is_image_like(hdul[0]) if len(hdul) else False
         if not hdu0_ok:
             print("[WARN] HDU0 is not a 2D numeric image. Auto-selecting best image HDU (or use --ext).")
@@ -354,14 +455,19 @@ def main() -> int:
         img_raw = clip_nan_inf(np.asarray(hdu.data))
         H, W = img_raw.shape
 
-        # background subtract
+        # ---- background gradient check on raw image ----
+        bggrad_flag = False
+        bggrad_info: Dict[str, Any] = {}
+        try:
+            bggrad_flag, bggrad_info = detect_background_gradient(img_raw)
+        except Exception as e:
+            print(f"[BGGrad][WARN] Failed on {fits_path.name}: {e}")
+
         bg = estimate_background(img_raw, tile=args.bg_tile)
         img_bgsub = img_raw - bg
 
-        # analysis mode: box-based auto
         img_detect = gaussian_filter(img_bgsub, args.smooth) if args.smooth > 0 else img_bgsub
 
-        # zeroth (whole image)
         zeroth = find_zeroth_order(
             img_detect=img_detect,
             box_w=args.zeroth_box_w,
@@ -370,7 +476,6 @@ def main() -> int:
             score_mode=args.zeroth_score_mode
         )
 
-        # first order (fixed 400x100 above/below + compact point)
         first_res = find_first_order(
             img_bgsub=img_bgsub,
             img_detect=img_detect,
@@ -383,7 +488,16 @@ def main() -> int:
         )
         first_pt = first_res.first_point
 
-        # extraction line: start before zeroth, pass through first point, extend to edge
+        # overexposure check (raw image)
+        bx0, by0, bx1, by1 = first_res.search_box
+        is_over, over_info = detect_overexposure_first(
+            data=img_raw,
+            i0=int(zeroth.y0), j0=int(zeroth.x0),
+            i1=int(by0),       j1=int(bx0),
+            h=args.zeroth_box_h,
+            w=args.zeroth_box_w
+        )
+
         x_start, y_start = point_before_zeroth(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, pre=args.pre)
         x_end, y_end = extend_line_to_image_edge(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, w=W, h=H)
 
@@ -393,18 +507,191 @@ def main() -> int:
             width=args.width, step=args.step, reducer=args.reducer
         )
 
-        # outputs
-        save_points_and_line_png(fits_outdir, img_raw, zeroth, first_res, x_start, y_start, x_end, y_end)
-        save_spectrum_png(fits_outdir, dist, flux)
-        write_csv(fits_outdir / "spectrum_with_characterization.csv",
+        # ---- partial first-order check ----
+        reaches_edge, edge_dist_px = path_reaches_edge(xs, ys, W, H)
+        partial_first_order, pmet = partial_first_order_photon_check(
+            flux,
+            step=args.step,
+            pre=args.pre
+        )
+        print(f"[EdgeCheck] reaches_edge={reaches_edge} edge_dist_px={edge_dist_px:.2f}")
+        print(f"[PartialFirstOrder] partial={partial_first_order} "
+              f"ratio={pmet.get('ratio', 0.0):.3f} "
+              f"after_net={pmet.get('after_net', 0.0):.3g} "
+              f"end_net={pmet.get('end_net', 0.0):.3g} "
+              f"baseline={pmet.get('baseline', 0.0):.3g}")
+
+        # ---- low SNR check ----
+        low_snr_flag, low_snr_info = detect_low_snr(
+            flux,
+            step=args.step,
+            pre=args.pre
+        )
+        print(f"[LowSNR] low_snr={bool(low_snr_flag)} "
+              f"snr_median={low_snr_info.get('snr_median', 0.0):.3f} "
+              f"snr_p25={low_snr_info.get('snr_p25', 0.0):.3f} "
+              f"noise_sigma={low_snr_info.get('noise_sigma', 0.0):.3g} "
+              f"baseline={low_snr_info.get('baseline', 0.0):.3g}")
+
+        # ---- background gradient print ----
+        print(f"[BGGrad] background_gradient={bool(bggrad_flag)} "
+              f"plane_delta_counts={bggrad_info.get('plane_delta_counts', None)}")
+
+        # write outputs to root first
+        save_points_and_line_png(outdir, img_raw, zeroth, first_res, x_start, y_start, x_end, y_end)
+        save_spectrum_png(outdir, dist, flux)
+        write_csv(outdir / "spectrum_with_characterization.csv",
                   fits_path=fits_path, hdu_index=hdu_index,
                   hdr_small=hdr_small, plausibility=plaus,
                   zeroth=zeroth, first_res=first_res,
                   line_pts=(x_start, y_start, x_end, y_end),
-                  dist=dist, xs=xs, ys=ys, flux=flux)
+                  dist=dist, xs=xs, ys=ys, flux=flux,
+                  partial_first_order_flag=partial_first_order,
+                  partial_metrics=pmet,
+                  reaches_edge=reaches_edge,
+                  edge_dist_px=edge_dist_px,
+                  background_gradient_flag=bggrad_flag,
+                  background_gradient_info=bggrad_info,
+                  low_snr_flag=low_snr_flag,
+                  low_snr_info=low_snr_info)
 
-    print(f"Wrote outputs to: {fits_outdir.resolve()}")
+        # star streak (optional)
+        streak_flag = False
+        ran_star = False
+        if (not args.no_star_streak) and (detect_star_streak is not None):
+            try:
+                streak, peaks, smoothed, props, valid_mask = detect_star_streak(dist, flux)
+                streak_flag = bool(streak)
+                ran_star = True
+
+                # write star-streak outputs to root first
+                save_star_streak_detection_png(
+                    streak_dir=outdir,
+                    s=dist,
+                    profile=flux,
+                    smoothed=smoothed,
+                    peaks=peaks,
+                    valid_mask=valid_mask,
+                    streak=streak_flag
+                )
+                write_star_streak_csv(outdir, fits_path, streak_flag, peaks, valid_mask)
+
+            except Exception as e:
+                print(f"[StarStreak][WARN] Failed on {fits_path.name}: {e}")
+        elif not args.no_star_streak and detect_star_streak is None:
+            print("[StarStreak][WARN] star_streak.py not importable; skipping.")
+
+        # bucket bases
+        bucket_bases: List[Path] = []
+        bucket_bases.append(outdir / ("star_streak" if streak_flag else "good_data"))
+        if bool(is_over):
+            bucket_bases.append(outdir / "overexposure")
+        if bool(partial_first_order):
+            bucket_bases.append(outdir / "partial_first_order")
+        if bool(bggrad_flag):
+            bucket_bases.append(outdir / "background_gradient")
+        if bool(low_snr_flag):
+            bucket_bases.append(outdir / "low_snr")
+
+        run_name = fits_path.stem
+        dest_dirs = [b / run_name for b in bucket_bases]
+        for d in dest_dirs:
+            ensure_dir(d)
+
+        files_to_route = [
+            outdir / "02_points_and_line.png",
+            outdir / "03_spectrum_pixel.png",
+            outdir / "spectrum_with_characterization.csv",
+        ]
+        if ran_star:
+            for p in [outdir / "streak_detection.png", outdir / "streak_summary.csv"]:
+                if p.exists():
+                    files_to_route.append(p)
+
+        # copy into each destination folder (supports multi-flag routing)
+        for d in dest_dirs:
+            for p in files_to_route:
+                if p.exists():
+                    shutil.copy2(str(p), str(d / p.name))
+
+        # cleanup root files after routing
+        for p in files_to_route:
+            try:
+                if p.exists():
+                    p.unlink()
+            except Exception:
+                pass
+
+        print(f"[Done] {fits_path.name} | star_streak={streak_flag} | overexposure={bool(is_over)} "
+              f"| partial_first_order={bool(partial_first_order)} | background_gradient={bool(bggrad_flag)} "
+              f"| low_snr={bool(low_snr_flag)}")
+
     return 0
+
+
+# ----------------------------- main -----------------------------
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Capstone: DS9-like spectra extraction (box-based zeroth + fixed first-order boxes).")
+    ap.add_argument("--fits", required=False, help="Path to FITS file")
+    ap.add_argument("--outdir", default="outputs_capstone", help="Output directory")
+    ap.add_argument("--ext", type=int, default=None, help="HDU index override (default: auto best)")
+
+    # batch
+    ap.add_argument("--batch", action="store_true", help="Process all .fit/.fits files in --data-dir (default: data)")
+    ap.add_argument("--data-dir", default="data", help="Folder containing FITS files for --batch")
+
+    # background
+    ap.add_argument("--bg-tile", type=int, default=64)
+    ap.add_argument("--smooth", type=float, default=1.0, help="Smoothing for detection image (bg-sub)")
+
+    # zeroth
+    ap.add_argument("--zeroth-box-w", type=int, default=100)
+    ap.add_argument("--zeroth-box-h", type=int, default=100)
+    ap.add_argument("--zeroth-step", type=int, default=4)
+    ap.add_argument("--zeroth-score-mode", choices=["integrated", "compact_flux", "contrast"], default="compact_flux")
+
+    # first-order fixed boxes
+    ap.add_argument("--first-fixed-w", type=int, default=400)
+    ap.add_argument("--first-fixed-h", type=int, default=100)
+    ap.add_argument("--first-pad", type=int, default=5)
+    ap.add_argument("--first-inner-w", type=int, default=21, help="Inner window size to find compact point")
+    ap.add_argument("--first-inner-h", type=int, default=21)
+
+    # extraction line + sampling
+    ap.add_argument("--pre", type=float, default=30.0, help="Pixels to start before zeroth along the line")
+    ap.add_argument("--profile-on", choices=["raw", "bgsub"], default="bgsub")
+    ap.add_argument("--width", type=int, default=5, help="Line width averaged perpendicular to path (DS9-like)")
+    ap.add_argument("--reducer", choices=["mean", "median"], default="mean")
+    ap.add_argument("--step", type=float, default=1.0)
+
+    # star streak
+    ap.add_argument("--no-star-streak", action="store_true",
+                    help="Disable running star_streak detection on the extracted 1D profile.")
+
+    args = ap.parse_args()
+
+    if args.batch:
+        data_dir = Path(args.data_dir)
+        fits_files = sorted(list(data_dir.glob("*.fit")) + list(data_dir.glob("*.fits")))
+        if not fits_files:
+            print(f"No FITS files found in: {data_dir.resolve()}")
+            return 0
+
+        rc = 0
+        for f in fits_files:
+            try:
+                rc |= process_one_file(f, args)
+            except Exception as e:
+                print(f"[ERROR] {f.name}: {e}")
+                rc = 1
+        print(f"Batch complete. Output root: {Path(args.outdir).resolve()}")
+        return rc
+
+    if not args.fits:
+        raise SystemExit("Provide --fits <file> or use --batch")
+
+    return process_one_file(Path(args.fits), args)
 
 
 if __name__ == "__main__":
