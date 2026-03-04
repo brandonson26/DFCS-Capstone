@@ -1,0 +1,8 @@
+2026-03-02 13:41:36,086 FolderWatcher INFO Starting watcher: path=FITSfileDropFolder recursive=True max_workers=4
+2026-03-02 13:41:45,174 FolderWatcher INFO Keyboard interrupt received.
+2026-03-02 13:41:45,174 FolderWatcher INFO Stopping watcher...
+2026-03-02 13:43:31,211 FolderWatcher INFO Starting watcher: path=FITSfileDropFolder recursive=True max_workers=4
+2026-03-02 13:43:31,213 FolderWatcher INFO Queued: FITSfileDropFolder/557557_DTV10-0001TG100.fit
+2026-03-02 13:43:31,213 FolderWatcher INFO Queued: FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-03-02 13:45:45,295 FolderWatcher INFO Processed OK: FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-03-02 13:45:45,372 FolderWatcher INFO Processed OK: FITSfileDropFolder/557557_DTV10-0001TG100.fit
