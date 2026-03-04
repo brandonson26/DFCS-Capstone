@@ -601,16 +601,15 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
         for d in dest_dirs:
             ensure_dir(d)
 
-    good_bad = "bad" if streak_flag else "good"
-        # ---- DB write (v3) ----
-    write_result_to_db(
+        
+# ---- DB write (v3) ----
+        write_result_to_db(
             fits_path=fits_path,
             hdu_index=hdu_index,
             hdr_small=hdr_small,
             outdir=outdir,
             run_name=run_name,
             dest_dirs=dest_dirs,
-            good_bad=good_bad,
             flags={
                 "star_streak": bool(streak_flag),
                 "overexposure": bool(is_over),
@@ -625,15 +624,15 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
                 "low_snr": low_snr_info,
             },
         )
-    files_to_route = [
+        files_to_route = [
             outdir / "02_points_and_line.png",
             outdir / "03_spectrum_pixel.png",
             outdir / "spectrum_with_characterization.csv",
         ]
-    if ran_star:
-        for p in [outdir / "streak_detection.png", outdir / "streak_summary.csv"]:
-            if p.exists():
-                files_to_route.append(p)
+        if ran_star:
+            for p in [outdir / "streak_detection.png", outdir / "streak_summary.csv"]:
+                if p.exists():
+                    files_to_route.append(p)
 
         # copy into each destination folder (supports multi-flag routing)
         for d in dest_dirs:
