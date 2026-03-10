@@ -1,13 +1,22 @@
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS files (
   id BIGSERIAL PRIMARY KEY,
   path TEXT UNIQUE NOT NULL,
   sha256 CHAR(64) UNIQUE NOT NULL,
   hdu_index INT,
+  instrument TEXT,
+  satellite TEXT,
+  quality_status TEXT NOT NULL DEFAULT 'useable' CHECK (quality_status IN ('useable', 'contaminated')),
   ingested_at TIMESTAMPTZ DEFAULT NOW(),
   hdr_small JSONB
 );
+
+CREATE INDEX IF NOT EXISTS files_quality_status_idx ON files (quality_status);
+CREATE INDEX IF NOT EXISTS files_instrument_idx ON files (instrument);
+CREATE INDEX IF NOT EXISTS files_satellite_idx ON files (satellite);
 
 CREATE TABLE IF NOT EXISTS flags (
   id SERIAL PRIMARY KEY,

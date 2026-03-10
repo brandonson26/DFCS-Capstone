@@ -38,8 +38,6 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 import threading
 import time
-import subprocess
-import sys
 from concurrent.futures import ThreadPoolExecutor, Future
 
 try:
@@ -392,6 +390,16 @@ if __name__ == "__main__":
     ap.add_argument("--watch-path", default="FITSfileDropFolder", help="Folder to watch.")
     ap.add_argument("--outdir", default="outputs", help="Output directory for capstone.py.")
     ap.add_argument(
+        "--scan-existing",
+        action="store_true",
+        help="Process existing FITS files already in the watch folder on startup.",
+    )
+    ap.add_argument(
+        "--no-star-streak",
+        action="store_true",
+        help="Disable star streak detection in capstone.",
+    )
+    ap.add_argument(
         "--patterns",
         nargs="*",
         default=["*.fit", "*.fits", "*.fts"],
@@ -400,24 +408,39 @@ if __name__ == "__main__":
     ap.add_argument("--max-workers", type=int, default=4, help="Parallel file workers.")
     args = ap.parse_args()
 
-    capstone_script = Path(__file__).with_name("capstone.py")
-
     def _capstone_processor(p: Path) -> None:
-        cmd = [
-            sys.executable,
-            str(capstone_script),
-            "--fits",
-            str(p),
-            "--outdir",
-            args.outdir,
-        ]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"capstone.py failed for {p}\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-            )
-        if proc.stdout.strip():
-            print(proc.stdout.strip())
+        from argparse import Namespace
+        from capstone import process_one_file
+
+        cap_args = Namespace(
+            fits=str(p),
+            outdir=args.outdir,
+            ext=None,
+            batch=False,
+            data_dir="data",
+            bg_tile=64,
+            smooth=1.0,
+            zeroth_box_w=100,
+            zeroth_box_h=100,
+            zeroth_step=4,
+            zeroth_score_mode="compact_flux",
+            first_fixed_w=400,
+            first_fixed_h=100,
+            first_pad=5,
+            first_inner_w=21,
+            first_inner_h=21,
+            pre=30.0,
+            profile_on="bgsub",
+            width=5,
+            reducer="mean",
+            step=1.0,
+            no_star_streak=args.no_star_streak,
+        )
+
+        rc = process_one_file(p, cap_args)
+        if rc != 0:
+            raise RuntimeError(f"capstone processing failed for {p} (exit code {rc})")
+        print(f"[DB Pipeline] processed {p.name}")
 
     watcher = FolderWatcher(
         watch_path=args.watch_path,
@@ -425,4 +448,9 @@ if __name__ == "__main__":
         patterns=args.patterns,
         max_workers=args.max_workers,
     )
+    if args.scan_existing:
+        base_dir = Path(args.watch_path)
+        for existing in sorted(base_dir.glob("*")):
+            if existing.is_file() and any(existing.match(pat) for pat in args.patterns):
+                watcher.submit(existing)
     watcher.run_forever()

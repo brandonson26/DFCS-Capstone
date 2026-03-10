@@ -1,31 +1,64 @@
-import os
 import json
-import hashlib
+import os
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+import time
+import logging
 
 import psycopg2
+from psycopg2 import OperationalError
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
+
+
+def connection_params() -> Dict[str, str | int]:
+    return {
+        "host": os.getenv("DB_HOST", "localhost"),
+        "port": int(os.getenv("DB_PORT", "5432")),
+        "dbname": os.getenv("DB_NAME", "capstone_db"),
+        "user": os.getenv("DB_USER", "capstone_user"),
+        "password": os.getenv("DB_PASSWORD", "capstone_pass"),
+    }
 
 
 def get_conn():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "5432")),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-    )
+    params = connection_params()
+    last_error: Optional[Exception] = None
+    for attempt in range(1, 4):
+        try:
+            return psycopg2.connect(
+                host=params["host"],
+                port=params["port"],
+                dbname=params["dbname"],
+                user=params["user"],
+                password=params["password"],
+            )
+        except OperationalError as exc:
+            last_error = exc
+            msg = str(exc).lower()
+            logger.warning(
+                "PostgreSQL connect attempt %s failed (host=%s db=%s user=%s): %s",
+                attempt,
+                params["host"],
+                params["dbname"],
+                params["user"],
+                msg,
+            )
+            if "password authentication failed" in msg:
+                raise RuntimeError(
+                    "PostgreSQL rejected the credentials for DB_USER/DB_PASSWORD. "
+                    "If this started after compose recreate, remove the old volume with "
+                    "`docker compose down -v && docker compose up -d` (this resets DB users)."
+                ) from exc
+            if "connect to server" in msg and attempt < 3:
+                time.sleep(1.5)
+                continue
+            raise
 
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    if last_error:
+        raise last_error
 
 
 def upsert_file(
@@ -33,22 +66,34 @@ def upsert_file(
     file_path: str,
     sha256: str,
     hdu_index: Optional[int],
+    instrument: Optional[str],
+    satellite: Optional[str],
+    quality_status: str,
     hdr_small: Optional[Dict[str, Any]],
-    good_bad: Optional[str],
 ) -> int:
     cur.execute(
         """
-        INSERT INTO files(path, sha256, hdu_index, hdr_small, good_bad)
-        VALUES (%s, %s, %s, %s::jsonb, %s)
+        INSERT INTO files(path, sha256, hdu_index, instrument, satellite, quality_status, hdr_small)
+        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
         ON CONFLICT (sha256) DO UPDATE SET
           path = EXCLUDED.path,
           hdu_index = EXCLUDED.hdu_index,
+          instrument = EXCLUDED.instrument,
+          satellite = EXCLUDED.satellite,
+          quality_status = EXCLUDED.quality_status,
           hdr_small = EXCLUDED.hdr_small,
-          good_bad = EXCLUDED.good_bad,
           ingested_at = NOW()
         RETURNING id
         """,
-        (file_path, sha256, hdu_index, json.dumps(hdr_small or {}), good_bad),
+        (
+            file_path,
+            sha256,
+            hdu_index,
+            instrument,
+            satellite,
+            quality_status,
+            json.dumps(hdr_small or {}),
+        ),
     )
     return cur.fetchone()[0]
 
@@ -101,15 +146,36 @@ def write_result_to_db(
     outdir: Path,
     run_name: str,
     dest_dirs: List[Path],
-    good_bad: str,
+    quality_status: str,
     flags: Dict[str, Any],
     flag_infos: Dict[str, Any],
+    instrument: Optional[str] = None,
+    satellite: Optional[str] = None,
 ) -> None:
     digest = sha256_file(fits_path)
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            file_id = upsert_file(cur, str(fits_path), digest, hdu_index, hdr_small, good_bad)
+            file_id = upsert_file(
+                cur,
+                str(fits_path),
+                digest,
+                hdu_index,
+                instrument,
+                satellite,
+                quality_status,
+                hdr_small,
+            )
             upsert_flags(cur, file_id, flags, flag_infos)
             insert_run(cur, file_id, str(outdir), run_name, [str(d) for d in dest_dirs])
         conn.commit()
+
+
+def sha256_file(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
