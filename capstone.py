@@ -6,14 +6,12 @@ Pipeline split:
   - capstone.py: FITS load, HDU inventory/selection, header plausibility,
                  visual confirmation (log scale), background subtract,
                  call find_zeroth_order + find_first_order, line + DS9-like spectrum,
-                 outputs PNGs + CSV
+                 outputs graph PNG metadata for DB
   - find_zeroth_order.py: box+centroid for zeroth
   - find_first_order.py: fixed 400x100 direction boxes + compact point for first order
 
-Outputs (written first into outdir root each run):
-  - 02_points_and_line.png
+Outputs (written into output folders each run):
   - 03_spectrum_pixel.png
-  - spectrum_with_characterization.csv
 
 Routing:
   - Each run creates a subfolder named by the FITS stem under:
@@ -23,8 +21,8 @@ Routing:
       <outdir>/partial_first_order/<fits_stem>/    (if partial 1st order flagged)
       <outdir>/background_gradient/<fits_stem>/    (if background gradient flagged)
       <outdir>/low_snr/<fits_stem>/                (if low SNR flagged)
-  - If multiple flags are true, outputs are copied into ALL matching folders.
-  - After copying, root outputs are removed.
+  - If multiple flags are true, the graph PNG is copied into ALL matching folders.
+  - After copying, root output is removed.
 
 Batch:
   - --batch processes all .fit/.fits inside --data-dir (default: data)
@@ -94,14 +92,39 @@ def safe_log_display(img: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     x = np.sign(x) * np.log1p(np.abs(x) + eps)
     return x
 
+
+def header_pick(hdr: fits.Header, candidates: List[str]) -> Optional[str]:
+    for k in candidates:
+        if k in hdr:
+            v = hdr[k]
+            if v is None:
+                continue
+            s = str(v).strip()
+            if s:
+                return s
+    return None
+
+
+def classify_quality(star_streak: bool) -> str:
+    return "contaminated" if star_streak else "useable"
+
+
 def header_subset(hdr) -> Dict[str, Any]:
     keys = ["DATE-OBS", "EXPTIME", "EXPOSURE", "GAIN", "RDNOISE", "SATURATE", "BUNIT",
-            "NAXIS1", "NAXIS2", "IMAGETYP", "OBJECT", "FILTER"]
+            "NAXIS1", "NAXIS2", "IMAGETYP", "OBJECT", "FILTER", "INSTRUME", "TELESCOP", "SATELLIT"]
     out = {}
     for k in keys:
         if k in hdr:
             out[k] = hdr[k]
     return out
+
+
+def extract_instrument(hdr: fits.Header) -> Optional[str]:
+    return header_pick(hdr, ["INSTRUME", "INSTRUMENT", "INSTR", "TELESCOP", "CAMERA", "DETECTOR"])
+
+
+def extract_satellite(hdr: fits.Header) -> Optional[str]:
+    return header_pick(hdr, ["SATELLITE", "SATELIT", "SAT", "ORIGIN", "TELESCOP", "OBSERVER"])
 
 def header_plausibility(hdr: fits.Header) -> List[str]:
     notes: List[str] = []
@@ -540,44 +563,17 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
         print(f"[BGGrad] background_gradient={bool(bggrad_flag)} "
               f"plane_delta_counts={bggrad_info.get('plane_delta_counts', None)}")
 
-        # write outputs to root first
-        save_points_and_line_png(outdir, img_raw, zeroth, first_res, x_start, y_start, x_end, y_end)
-        save_spectrum_png(outdir, dist, flux)
-        write_csv(outdir / "spectrum_with_characterization.csv",
-                  fits_path=fits_path, hdu_index=hdu_index,
-                  hdr_small=hdr_small, plausibility=plaus,
-                  zeroth=zeroth, first_res=first_res,
-                  line_pts=(x_start, y_start, x_end, y_end),
-                  dist=dist, xs=xs, ys=ys, flux=flux,
-                  partial_first_order_flag=partial_first_order,
-                  partial_metrics=pmet,
-                  reaches_edge=reaches_edge,
-                  edge_dist_px=edge_dist_px,
-                  background_gradient_flag=bggrad_flag,
-                  background_gradient_info=bggrad_info,
-                  low_snr_flag=low_snr_flag,
-                  low_snr_info=low_snr_info)
+        # write the single canonical output (graph PNG) used by this pipeline
+        graph_png = save_spectrum_png(outdir, dist, flux)
 
         # star streak (optional)
         streak_flag = False
-        ran_star = False
         if (not args.no_star_streak) and (detect_star_streak is not None):
             try:
-                streak, peaks, smoothed, props, valid_mask = detect_star_streak(dist, flux)
+                streak, peaks, smoothed, _props, valid_mask = detect_star_streak(dist, flux)
                 streak_flag = bool(streak)
-                ran_star = True
-
-                # write star-streak outputs to root first
-                save_star_streak_detection_png(
-                    streak_dir=outdir,
-                    s=dist,
-                    profile=flux,
-                    smoothed=smoothed,
-                    peaks=peaks,
-                    valid_mask=valid_mask,
-                    streak=streak_flag
-                )
-                write_star_streak_csv(outdir, fits_path, streak_flag, peaks, valid_mask)
+                # Keep star-streak detection internal-only for classification.
+                # Additional files are intentionally not emitted to satisfy single-output behavior.
 
             except Exception as e:
                 print(f"[StarStreak][WARN] Failed on {fits_path.name}: {e}")
@@ -601,16 +597,19 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
         for d in dest_dirs:
             ensure_dir(d)
 
-    good_bad = "bad" if streak_flag else "good"
-        # ---- DB write (v3) ----
+    quality_status = classify_quality(streak_flag)
+
+    # ---- DB write (v4) ----
     write_result_to_db(
+            instrument=extract_instrument(hdr),
+            satellite=extract_satellite(hdr),
             fits_path=fits_path,
             hdu_index=hdu_index,
             hdr_small=hdr_small,
             outdir=outdir,
             run_name=run_name,
             dest_dirs=dest_dirs,
-            good_bad=good_bad,
+            quality_status=quality_status,
             flags={
                 "star_streak": bool(streak_flag),
                 "overexposure": bool(is_over),
@@ -625,33 +624,26 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
                 "low_snr": low_snr_info,
             },
         )
-    files_to_route = [
-            outdir / "02_points_and_line.png",
-            outdir / "03_spectrum_pixel.png",
-            outdir / "spectrum_with_characterization.csv",
-        ]
-    if ran_star:
-        for p in [outdir / "streak_detection.png", outdir / "streak_summary.csv"]:
-            if p.exists():
-                files_to_route.append(p)
+    # Copy only the primary graph output into all destination folders.
+    files_to_route = [graph_png]
 
-        # copy into each destination folder (supports multi-flag routing)
-        for d in dest_dirs:
-            for p in files_to_route:
-                if p.exists():
-                    shutil.copy2(str(p), str(d / p.name))
-
-        # cleanup root files after routing
+    # copy into each destination folder (supports multi-flag routing)
+    for d in dest_dirs:
         for p in files_to_route:
-            try:
-                if p.exists():
-                    p.unlink()
-            except Exception:
-                pass
+            if p.exists():
+                shutil.copy2(str(p), str(d / p.name))
 
-        print(f"[Done] {fits_path.name} | star_streak={streak_flag} | overexposure={bool(is_over)} "
-              f"| partial_first_order={bool(partial_first_order)} | background_gradient={bool(bggrad_flag)} "
-              f"| low_snr={bool(low_snr_flag)}")
+    # cleanup root files after routing
+    for p in files_to_route:
+        try:
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+
+    print(f"[Done] {fits_path.name} | star_streak={streak_flag} | overexposure={bool(is_over)} "
+          f"| partial_first_order={bool(partial_first_order)} | background_gradient={bool(bggrad_flag)} "
+          f"| low_snr={bool(low_snr_flag)}")
 
     return 0
 
