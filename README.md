@@ -51,6 +51,8 @@ python3 IncomingFileEventHandler.py --watch-path FITSfileDropFolder --outdir out
 Optional:
 - add `--scan-existing` to process any FITS files already in the folder when the watcher starts.
 - add `--no-star-streak` to skip star streak detection.
+- star-streak classification now runs only when header target looks satellite-related (`DTV10` / `DirecTV`) and is skipped for star target (`HD128998`).
+- Dashboard `/` now shows a `Spectrum PNG` thumbnail column and a `Download FITS` link in the recent files table.
 
 The watcher runs until you stop it (`Ctrl+C`) by design.
 

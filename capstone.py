@@ -126,6 +126,41 @@ def extract_instrument(hdr: fits.Header) -> Optional[str]:
 def extract_satellite(hdr: fits.Header) -> Optional[str]:
     return header_pick(hdr, ["SATELLITE", "SATELIT", "SAT", "ORIGIN", "TELESCOP", "OBSERVER"])
 
+
+def extract_target_name(hdr: fits.Header) -> Optional[str]:
+    return header_pick(
+        hdr,
+        [
+            "OBJECT",
+            "OBJECT_NAME",
+            "TARGNAME",
+            "TARGET",
+            "TARGETNAME",
+            "SOURCE",
+            "SRCNAME",
+        ],
+    )
+
+
+def _contains_any(value: Optional[str], terms: List[str]) -> bool:
+    if not value:
+        return False
+    text = str(value).upper()
+    return any(term in text for term in terms)
+
+
+def is_satellite_observation(hdr: fits.Header) -> bool:
+    satellite_field = extract_satellite(hdr)
+    target_field = extract_target_name(hdr)
+    # Normalize and match known satellite naming patterns.
+    return _contains_any(satellite_field, ["DTV10", "DIRECTV"]) or _contains_any(target_field, ["DTV10", "DIRECTV"])
+
+
+def is_star_observation(hdr: fits.Header) -> bool:
+    target_field = extract_target_name(hdr)
+    # Star names are handled separately and do not use star-streak classification.
+    return _contains_any(target_field, ["HD128998"])
+
 def header_plausibility(hdr: fits.Header) -> List[str]:
     notes: List[str] = []
     exptime = hdr.get("EXPTIME", hdr.get("EXPOSURE", None))
@@ -567,18 +602,25 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
         graph_png = save_spectrum_png(outdir, dist, flux)
 
         # star streak (optional)
+        is_satellite_target = is_satellite_observation(hdr)
+        is_star_target = is_star_observation(hdr)
+        run_star_streak = bool(is_satellite_target and not is_star_target)
         streak_flag = False
-        if (not args.no_star_streak) and (detect_star_streak is not None):
+        if (not args.no_star_streak) and run_star_streak and (detect_star_streak is not None):
             try:
                 streak, peaks, smoothed, _props, valid_mask = detect_star_streak(dist, flux)
                 streak_flag = bool(streak)
                 # Keep star-streak detection internal-only for classification.
                 # Additional files are intentionally not emitted to satisfy single-output behavior.
-
             except Exception as e:
                 print(f"[StarStreak][WARN] Failed on {fits_path.name}: {e}")
-        elif not args.no_star_streak and detect_star_streak is None:
+        elif not args.no_star_streak and run_star_streak and detect_star_streak is None:
             print("[StarStreak][WARN] star_streak.py not importable; skipping.")
+        elif not run_star_streak:
+            if is_star_target:
+                print(f"[StarStreak] skipped for {fits_path.name} (classified as star target; star-streak off)")
+            elif not is_satellite_target:
+                print(f"[StarStreak] skipped for {fits_path.name} (not a satellite-targeted file)")
 
         # bucket bases
         bucket_bases: List[Path] = []

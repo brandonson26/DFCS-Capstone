@@ -1,8 +1,30 @@
-2026-03-02 13:41:36,086 FolderWatcher INFO Starting watcher: path=FITSfileDropFolder recursive=True max_workers=4
-2026-03-02 13:41:45,174 FolderWatcher INFO Keyboard interrupt received.
-2026-03-02 13:41:45,174 FolderWatcher INFO Stopping watcher...
-2026-03-02 13:43:31,211 FolderWatcher INFO Starting watcher: path=FITSfileDropFolder recursive=True max_workers=4
-2026-03-02 13:43:31,213 FolderWatcher INFO Queued: FITSfileDropFolder/557557_DTV10-0001TG100.fit
-2026-03-02 13:43:31,213 FolderWatcher INFO Queued: FITSfileDropFolder/777777_DTV10-0003TG100.fit
-2026-03-02 13:45:45,295 FolderWatcher INFO Processed OK: FITSfileDropFolder/777777_DTV10-0003TG100.fit
-2026-03-02 13:45:45,372 FolderWatcher INFO Processed OK: FITSfileDropFolder/557557_DTV10-0001TG100.fit
+2026-03-16 09:37:35,262 FolderWatcher INFO Starting watcher: path=/home/brandonjson/CapstoneLocalDev/FITSfileDropFolder recursive=True max_workers=4
+2026-03-16 15:50:25,805 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-03-16 16:37:45,912 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-03-16 10:37:45,982 FolderWatcher INFO Queued: /home/brandonjson/CapstoneLocalDev/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-03-16 16:42:51,255 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-03-16 10:42:53,076 FolderWatcher ERROR Processing FAILED: /home/brandonjson/CapstoneLocalDev/FITSfileDropFolder/777777_DTV10-0003TG100.fit (PostgreSQL rejected the credentials for DB_USER/DB_PASSWORD. If this started after compose recreate, remove the old volume with `docker compose down -v && docker compose up -d` (this resets DB users).)
+Traceback (most recent call last):
+  File "/home/brandonjson/CapstoneLocalDev/db/db.py", line 31, in get_conn
+    return psycopg2.connect(
+  File "/home/brandonjson/.local/lib/python3.10/site-packages/psycopg2/__init__.py", line 122, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+psycopg2.OperationalError: connection to server at "localhost" (127.0.0.1), port 5432 failed: FATAL:  password authentication failed for user "capstone_user"
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/brandonjson/CapstoneLocalDev/IncomingFileEventHandler.py", line 310, in _process_one_file
+    self.processor(path)
+  File "/home/brandonjson/CapstoneLocalDev/IncomingFileEventHandler.py", line 440, in _capstone_processor
+    rc = process_one_file(p, cap_args)
+  File "/home/brandonjson/CapstoneLocalDev/capstone.py", line 645, in process_one_file
+    write_result_to_db(
+  File "/home/brandonjson/CapstoneLocalDev/db/db.py", line 157, in write_result_to_db
+    with get_conn() as conn:
+  File "/home/brandonjson/CapstoneLocalDev/db/db.py", line 50, in get_conn
+    raise RuntimeError(
+RuntimeError: PostgreSQL rejected the credentials for DB_USER/DB_PASSWORD. If this started after compose recreate, remove the old volume with `docker compose down -v && docker compose up -d` (this resets DB users).

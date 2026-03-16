@@ -1,11 +1,26 @@
+import json
 import os
+from pathlib import Path
 
 from flask import Flask
+from flask import abort
 from flask import jsonify
 from flask import render_template_string
+from flask import send_file
+
 from db import get_conn
 
 app = Flask(__name__)
+
+DEFAULT_OUTPUT_ROOT = os.getenv("OUTPUT_ROOT", "/app")
+SPECTRUM_IMAGE_NAME = "03_spectrum_pixel.png"
+SATELLITE_KEYWORDS = ["DTV10", "DIRECTV"]
+STAR_KEYWORDS = ["HD128998"]
+SECTION_LABELS = [
+    ("stars", "Stars"),
+    ("satellites", "Satellites"),
+    ("other", "Other"),
+]
 
 TEMPLATE = """<!doctype html>
 <html>
@@ -15,10 +30,11 @@ TEMPLATE = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font-family: ui-sans-serif, system-ui, Arial; margin: 20px; color: #0f172a; }
-    table { border-collapse: collapse; width: 100%; max-width: 1100px; }
-    th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; }
+    table { border-collapse: collapse; width: 100%; max-width: 1300px; }
+    th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; vertical-align: top; }
     th { background: #f3f4f6; }
-    .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; max-width: 1100px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; max-width: 1300px; }
+    .thumb { max-width: 160px; max-height: 90px; border: 1px solid #cbd5e1; display: block; }
   </style>
 </head>
 <body>
@@ -34,20 +50,24 @@ TEMPLATE = """<!doctype html>
     </p>
   </div>
   <div class="card">
-    <h3>Recent files</h3>
+    {% for section in sections %}
+    <h3>{{ section.label }} ({{ section.rows|length }})</h3>
     <table>
-      <tr><th>Path</th><th>Status</th><th>Instrument</th><th>Satellite</th><th>Ingested At</th><th>SHA</th></tr>
-      {% for row in recent_files %}
+      <tr><th>Path</th><th>Spectrum PNG</th><th>Status</th><th>Instrument</th><th>Satellite</th><th>Ingested At</th><th>SHA</th><th>Download FITS</th></tr>
+      {% for row in section.rows %}
       <tr>
         <td>{{ row.path }}</td>
+        <td>{% if row.png_url %}<a href="{{ row.png_url }}" target="_blank"><img src="{{ row.png_url }}" class="thumb" alt="spectrum"></a>{% else %}n/a{% endif %}</td>
         <td>{{ row.quality_status }}</td>
         <td>{{ row.instrument or '' }}</td>
         <td>{{ row.satellite or '' }}</td>
         <td>{{ row.ingested_at }}</td>
         <td>{{ row.sha256 }}</td>
+        <td>{% if row.download_url %}<a href="{{ row.download_url }}">download</a>{% else %}n/a{% endif %}</td>
       </tr>
       {% endfor %}
     </table>
+    {% endfor %}
   </div>
   <div class="card">
     <p>Health: {{ db_ok }}</p>
@@ -69,17 +89,133 @@ def health():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+
 def table_count(cur, name: str) -> int:
     cur.execute(f"SELECT COUNT(*) FROM {name}")
     return int(cur.fetchone()[0])
 
 
-def recent_files(limit: int = 25):
+def _parse_dest_dirs(raw) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(x) for x in parsed if isinstance(x, str)]
+        except json.JSONDecodeError:
+            pass
+    return []
+
+
+def _latest_run_dest_dirs(file_id: int) -> list[str]:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT path, quality_status, instrument, satellite, ingested_at, sha256
+                SELECT r.dest_dirs
+                FROM runs r
+                WHERE r.file_id = %s
+                ORDER BY r.id DESC
+                LIMIT 1
+                """,
+                (file_id,),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        return []
+    return _parse_dest_dirs(row[0])
+
+
+def _candidate_search_dirs() -> list[Path]:
+    return [
+        Path("/app"),
+        Path("/app/FITSfileDropFolder"),
+        Path("/app/outputs"),
+    ]
+
+
+def _find_png_in_runs(dest_dirs: list[str]) -> str | None:
+    if not dest_dirs:
+        return None
+
+    for dest in dest_dirs:
+        if not dest:
+            continue
+
+        d_path = Path(dest)
+        if not d_path.is_absolute():
+            d_path = Path(DEFAULT_OUTPUT_ROOT) / d_path
+
+        candidate = d_path / SPECTRUM_IMAGE_NAME
+        if candidate.exists():
+            return str(candidate)
+
+    return None
+
+
+def _find_fits_path(raw_path: str | None) -> Path | None:
+    if not raw_path:
+        return None
+
+    p = Path(raw_path)
+    if p.exists():
+        return p
+
+    # Fallback for host/container path mismatches: locate by filename in mounted folders.
+    for base in _candidate_search_dirs():
+        if not base.exists():
+            continue
+        matches = list(base.rglob(p.name))
+        if matches:
+            return matches[0]
+
+    return None
+
+
+def _build_row_dict(file_row: tuple) -> dict:
+    file_id, path, quality_status, instrument, satellite, ingested_at, sha256 = file_row
+    dest_dirs = _latest_run_dest_dirs(file_id)
+    png_abs_path = _find_png_in_runs(dest_dirs)
+
+    return {
+        "id": file_id,
+        "path": path,
+        "quality_status": quality_status,
+        "instrument": instrument,
+        "satellite": satellite,
+        "category": _classify_category(satellite),
+        "ingested_at": str(ingested_at),
+        "sha256": sha256,
+        "png_url": f"/file-plot/{file_id}" if png_abs_path else None,
+        "download_url": f"/file-download/{file_id}",
+    }
+
+
+def _normalize_for_match(value: str | None) -> str:
+    if value is None:
+        return ""
+    return str(value).upper().strip()
+
+
+def _classify_category(satellite: str | None) -> str:
+    normalized = _normalize_for_match(satellite)
+    if any(keyword in normalized for keyword in STAR_KEYWORDS):
+        return "stars"
+    if any(keyword in normalized for keyword in SATELLITE_KEYWORDS):
+        return "satellites"
+    return "other"
+
+
+def _latest_files(limit: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, path, quality_status, instrument, satellite, ingested_at, sha256
                 FROM files
                 ORDER BY ingested_at DESC
                 LIMIT %s
@@ -87,16 +223,18 @@ def recent_files(limit: int = 25):
                 (limit,),
             )
             rows = cur.fetchall()
+    return [_build_row_dict(r) for r in rows]
+
+
+def recent_sections(limit: int = 25):
+    rows = _latest_files(limit)
+    grouped = {label: [] for label, _ in SECTION_LABELS}
+    for row in rows:
+        grouped[row["category"]].append(row)
+
     return [
-        {
-            "path": r[0],
-            "quality_status": r[1],
-            "instrument": r[2],
-            "satellite": r[3],
-            "ingested_at": str(r[4]),
-            "sha256": r[5],
-        }
-        for r in rows
+        {"label": label, "rows": grouped[key]}
+        for key, label in SECTION_LABELS
     ]
 
 
@@ -118,8 +256,39 @@ def index():
     return render_template_string(
         TEMPLATE,
         counts=counts,
-        recent_files=recent_files(25),
+        sections=recent_sections(25),
         db_ok=db_ok,
+    )
+
+
+@app.get("/file-plot/<int:file_id>")
+def file_plot(file_id: int):
+    dest_dirs = _latest_run_dest_dirs(file_id)
+    png_abs_path = _find_png_in_runs(dest_dirs)
+    if not png_abs_path:
+        return jsonify({"error": "PNG not found for file"}), 404
+
+    return send_file(png_abs_path, mimetype="image/png")
+
+
+@app.get("/file-download/<int:file_id>")
+def file_download(file_id: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT path FROM files WHERE id = %s", (file_id,))
+            row = cur.fetchone()
+
+    if not row:
+        abort(404, description="File not found in DB")
+
+    fits_path = _find_fits_path(row[0])
+    if not fits_path:
+        abort(404, description="File not accessible from web container")
+
+    return send_file(
+        str(fits_path),
+        as_attachment=True,
+        download_name=fits_path.name,
     )
 
 
@@ -128,15 +297,11 @@ def files_page():
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, path, quality_status, instrument, satellite, sha256, ingested_at FROM files ORDER BY ingested_at DESC LIMIT 500")
+                cur.execute(
+                    "SELECT id, path, quality_status, instrument, satellite, ingested_at, sha256 FROM files ORDER BY ingested_at DESC LIMIT 500"
+                )
                 rows = cur.fetchall()
-        return jsonify([
-            {
-                "id": r[0], "path": r[1], "quality_status": r[2],
-                "instrument": r[3], "satellite": r[4], "sha256": r[5], "ingested_at": str(r[6]),
-            }
-            for r in rows
-        ])
+        return jsonify([_build_row_dict(r) for r in rows])
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
