@@ -40,30 +40,17 @@ TEMPLATE = """<!doctype html>
 <body>
   <h1>Capstone DB Dashboard</h1>
   <div class="card">
-    <h3>Quick checks</h3>
-    <p>files: {{ counts.files }}</p>
-    <p>flags: {{ counts.flags }}</p>
-    <p>run records: {{ counts.runs }}</p>
-    <p>file/flag links:
-      <a href="/files">files</a> |
-      <a href="/file_flags">file_flags</a>
-    </p>
-  </div>
-  <div class="card">
     {% for section in sections %}
     <h3>{{ section.label }} ({{ section.rows|length }})</h3>
     <table>
-      <tr><th>Path</th><th>Spectrum PNG</th><th>Status</th><th>Instrument</th><th>Satellite</th><th>Ingested At</th><th>SHA</th><th>Download FITS</th></tr>
+      <tr><th>Path</th><th>Spectrum PNG</th><th>Status</th><th>Download FITS</th><th>More Info</th></tr>
       {% for row in section.rows %}
       <tr>
         <td>{{ row.path }}</td>
         <td>{% if row.png_url %}<a href="{{ row.png_url }}" target="_blank"><img src="{{ row.png_url }}" class="thumb" alt="spectrum"></a>{% else %}n/a{% endif %}</td>
         <td>{{ row.quality_status }}</td>
-        <td>{{ row.instrument or '' }}</td>
-        <td>{{ row.satellite or '' }}</td>
-        <td>{{ row.ingested_at }}</td>
-        <td>{{ row.sha256 }}</td>
         <td>{% if row.download_url %}<a href="{{ row.download_url }}">download</a>{% else %}n/a{% endif %}</td>
+        <td><a href="/files/{{ row.id }}">more info</a></td>
       </tr>
       {% endfor %}
     </table>
@@ -71,6 +58,69 @@ TEMPLATE = """<!doctype html>
   </div>
   <div class="card">
     <p>Health: {{ db_ok }}</p>
+  </div>
+</body>
+</html>
+"""
+
+
+FILE_DETAIL_TEMPLATE = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>File {{ file.id }} - Details</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: ui-sans-serif, system-ui, Arial; margin: 20px; color: #0f172a; }
+    .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; max-width: 1300px; }
+    table { border-collapse: collapse; width: 100%; max-width: 1300px; }
+    th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; width: 180px; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .small { color: #4b5563; font-size: 13px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>File Detail</h1>
+  <p class="small"><a href="/">← Back to dashboard</a></p>
+  <div class="card">
+    <h3>File Metadata</h3>
+    <table>
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td>ID</td><td>{{ file.id }}</td></tr>
+      <tr><td>Path</td><td>{{ file.path }}</td></tr>
+      <tr><td>SHA256</td><td>{{ file.sha256 }}</td></tr>
+      <tr><td>HDU Index</td><td>{{ file.hdu_index }}</td></tr>
+      <tr><td>Instrument</td><td>{{ file.instrument or '' }}</td></tr>
+      <tr><td>Satellite</td><td>{{ file.satellite or '' }}</td></tr>
+      <tr><td>Quality Status</td><td>{{ file.quality_status }}</td></tr>
+      <tr><td>Ingested At</td><td>{{ file.ingested_at }}</td></tr>
+      <tr><td>Header (hdr_small)</td><td><pre>{{ file.hdr_small }}</pre></td></tr>
+      <tr>
+        <td>Actions</td>
+        <td>
+          <a href="{{ file.download_url }}">Download FITS</a>
+          {% if file.png_url %} | <a href="{{ file.png_url }}" target="_blank">View Spectrum PNG</a>{% endif %}
+        </td>
+      </tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Flags</h3>
+    {% if flags %}
+    <table>
+      <tr><th>Flag</th><th>Value</th><th>Info</th></tr>
+      {% for item in flags %}
+      <tr>
+        <td>{{ item.flag }}</td>
+        <td>{{ item.value }}</td>
+        <td><pre>{{ item.info }}</pre></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>No flags were recorded for this file.</p>
+    {% endif %}
   </div>
 </body>
 </html>
@@ -195,6 +245,42 @@ def _build_row_dict(file_row: tuple) -> dict:
     }
 
 
+def _get_file_by_id(file_id: int) -> dict | None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, path, sha256, hdu_index, instrument, satellite,
+                       quality_status, ingested_at, hdr_small
+                FROM files
+                WHERE id = %s
+                """,
+                (file_id,),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        return None
+
+    file_id, path, sha256, hdu_index, instrument, satellite, quality_status, ingested_at, hdr_small = row
+    dest_dirs = _latest_run_dest_dirs(file_id)
+    png_abs_path = _find_png_in_runs(dest_dirs)
+
+    return {
+        "id": file_id,
+        "path": path,
+        "sha256": sha256,
+        "hdu_index": hdu_index,
+        "instrument": instrument,
+        "satellite": satellite,
+        "quality_status": quality_status,
+        "ingested_at": str(ingested_at),
+        "hdr_small": json.dumps(hdr_small, indent=2, sort_keys=True) if hdr_small is not None else "{}",
+        "png_url": f"/file-plot/{file_id}" if png_abs_path else None,
+        "download_url": f"/file-download/{file_id}",
+    }
+
+
 def _normalize_for_match(value: str | None) -> str:
     if value is None:
         return ""
@@ -304,6 +390,41 @@ def files_page():
         return jsonify([_build_row_dict(r) for r in rows])
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/files/<int:file_id>")
+def file_detail_page(file_id: int):
+    file_row = _get_file_by_id(file_id)
+    if not file_row:
+        abort(404, description="File not found")
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT f.name, ff.value, ff.info
+                    FROM file_flags ff
+                    JOIN flags f ON f.id = ff.flag_id
+                    WHERE ff.file_id = %s
+                    ORDER BY f.name
+                    """,
+                    (file_id,),
+                )
+                flag_rows = cur.fetchall()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    flags = [
+        {"flag": name, "value": bool(value), "info": json.dumps(info, indent=2, sort_keys=True) if info is not None else "{}"}
+        for name, value, info in flag_rows
+    ]
+
+    return render_template_string(
+        FILE_DETAIL_TEMPLATE,
+        file=file_row,
+        flags=flags,
+    )
 
 
 @app.get("/file_flags")
