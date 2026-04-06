@@ -29,6 +29,7 @@ Batch:
 """
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -36,6 +37,13 @@ import shutil
 
 import numpy as np
 from astropy.io import fits
+
+# Use a writable, persistent Matplotlib cache directory to avoid expensive
+# font-cache rebuilds on every run.
+if "MPLCONFIGDIR" not in os.environ:
+    _mpl_dir = Path(__file__).resolve().parent / ".mplconfig"
+    _mpl_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["MPLCONFIGDIR"] = str(_mpl_dir)
 
 import matplotlib
 matplotlib.use("Agg")
@@ -343,6 +351,62 @@ def point_before_zeroth(xz: float, yz: float, xf: float, yf: float, pre: float) 
     ux, uy = dx / L, dy / L
     return xz - pre * ux, yz - pre * uy
 
+def line_through_image_edges(
+    xa: float, ya: float, xb: float, yb: float, w: int, h: int
+) -> Optional[Tuple[float, float, float, float]]:
+    """
+    Extend the infinite line through two points to the image border and return
+    two edge intersection points (start/end). Returns None if degenerate.
+    """
+    dx = xb - xa
+    dy = yb - ya
+    if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+        return None
+
+    cands: List[Tuple[float, float, float]] = []
+
+    if abs(dx) > 1e-12:
+        t = (0.0 - xa) / dx
+        y = ya + t * dy
+        if 0.0 <= y <= (h - 1):
+            cands.append((t, 0.0, float(y)))
+        t = ((w - 1) - xa) / dx
+        y = ya + t * dy
+        if 0.0 <= y <= (h - 1):
+            cands.append((t, float(w - 1), float(y)))
+
+    if abs(dy) > 1e-12:
+        t = (0.0 - ya) / dy
+        x = xa + t * dx
+        if 0.0 <= x <= (w - 1):
+            cands.append((t, float(x), 0.0))
+        t = ((h - 1) - ya) / dy
+        x = xa + t * dx
+        if 0.0 <= x <= (w - 1):
+            cands.append((t, float(x), float(h - 1)))
+
+    if len(cands) < 2:
+        return None
+
+    # Deduplicate near-identical corner intersections.
+    uniq: List[Tuple[float, float, float]] = []
+    for t, x, y in cands:
+        keep = True
+        for _, ux, uy in uniq:
+            if abs(x - ux) < 1e-6 and abs(y - uy) < 1e-6:
+                keep = False
+                break
+        if keep:
+            uniq.append((t, x, y))
+
+    if len(uniq) < 2:
+        return None
+
+    uniq.sort(key=lambda z: z[0])
+    _, x1, y1 = uniq[0]
+    _, x2, y2 = uniq[-1]
+    return (x1, y1, x2, y2)
+
 def sample_line_profile(img: np.ndarray,
                         x1: float, y1: float,
                         x2: float, y2: float,
@@ -637,6 +701,20 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
 
         x_start, y_start = point_before_zeroth(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, pre=args.pre)
         x_end, y_end = extend_line_to_image_edge(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, w=W, h=H)
+
+        # If both first-order points are available (above + below), sample a
+        # full-image line through them so zeroth sits between both orders.
+        if first_res.above_point is not None and first_res.below_point is not None:
+            full_line = line_through_image_edges(
+                first_res.below_point.cx,
+                first_res.below_point.cy,
+                first_res.above_point.cx,
+                first_res.above_point.cy,
+                w=W,
+                h=H,
+            )
+            if full_line is not None:
+                x_start, y_start, x_end, y_end = full_line
 
         img_profile = img_raw if args.profile_on == "raw" else img_bgsub
         dist, xs, ys, flux = sample_line_profile(

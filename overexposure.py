@@ -77,16 +77,18 @@ def detect_overexposure_first(data, i0, j0, i1, j1, h, w,
     max1 = float(np.max(f)) if f.size else float("nan")
 
     thr = sat - margin
-    near_sat = np.isfinite(max1) and (max1 >= thr)
+    near_sat_zeroth = np.isfinite(max0) and (max0 >= thr)
+    near_sat_first = np.isfinite(max1) and (max1 >= thr)
     brighter = np.isfinite(max0) and np.isfinite(max1) and (max1 > max0)
 
     return (
-        bool(near_sat or brighter),
+        bool(near_sat_zeroth or near_sat_first or brighter),
         {
             "max_zeroth": max0,
             "max_first": max1,
             "thr": thr,
-            "first_near_sat": bool(near_sat),
+            "zeroth_near_sat": bool(near_sat_zeroth),
+            "first_near_sat": bool(near_sat_first),
             "first_brighter_than_zeroth": bool(brighter),
         },
     )
