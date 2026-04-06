@@ -400,6 +400,12 @@ if __name__ == "__main__":
         help="Disable star streak detection in capstone.",
     )
     ap.add_argument(
+        "--device",
+        choices=["auto", "cpu", "gpu"],
+        default="auto",
+        help="Compute backend for capstone processing.",
+    )
+    ap.add_argument(
         "--patterns",
         nargs="*",
         default=["*.fit", "*.fits", "*.fts"],
@@ -435,6 +441,7 @@ if __name__ == "__main__":
             reducer="mean",
             step=1.0,
             no_star_streak=args.no_star_streak,
+            device=args.device,
         )
 
         rc = process_one_file(p, cap_args)

@@ -67,6 +67,73 @@ except Exception:
 # overexposure detector
 from overexposure import detect_overexposure_first
 
+# ----------------------------- compute backend -----------------------------
+
+_CPU_GAUSSIAN_FILTER = gaussian_filter
+_CPU_MAP_COORDINATES = map_coordinates
+
+XP = np
+ND_GAUSSIAN_FILTER = _CPU_GAUSSIAN_FILTER
+ND_MAP_COORDINATES = _CPU_MAP_COORDINATES
+GPU_ENABLED = False
+BACKEND_LABEL = "cpu"
+
+
+def configure_compute_backend(mode: str = "auto") -> None:
+    """
+    Configure numeric backend for optional GPU acceleration.
+    Modes:
+      - auto: use GPU if CuPy + CUDA device are available, else CPU
+      - cpu : force CPU backend
+      - gpu : require GPU backend (raises if unavailable)
+    """
+    global XP, ND_GAUSSIAN_FILTER, ND_MAP_COORDINATES, GPU_ENABLED, BACKEND_LABEL
+
+    wanted = (mode or "auto").strip().lower()
+    if wanted not in {"auto", "cpu", "gpu"}:
+        raise ValueError(f"Unsupported --device value: {mode!r}")
+
+    def _use_cpu() -> None:
+        global XP, ND_GAUSSIAN_FILTER, ND_MAP_COORDINATES, GPU_ENABLED, BACKEND_LABEL
+        XP = np
+        ND_GAUSSIAN_FILTER = _CPU_GAUSSIAN_FILTER
+        ND_MAP_COORDINATES = _CPU_MAP_COORDINATES
+        GPU_ENABLED = False
+        BACKEND_LABEL = "cpu"
+
+    if wanted == "cpu":
+        _use_cpu()
+        return
+
+    try:
+        import cupy as cp  # type: ignore
+        from cupyx.scipy.ndimage import gaussian_filter as cp_gaussian_filter  # type: ignore
+        from cupyx.scipy.ndimage import map_coordinates as cp_map_coordinates  # type: ignore
+
+        device_count = int(cp.cuda.runtime.getDeviceCount())
+        if device_count < 1:
+            raise RuntimeError("No CUDA devices detected.")
+
+        XP = cp
+        ND_GAUSSIAN_FILTER = cp_gaussian_filter
+        ND_MAP_COORDINATES = cp_map_coordinates
+        GPU_ENABLED = True
+        BACKEND_LABEL = f"gpu(cuda_devices={device_count})"
+    except Exception as e:
+        if wanted == "gpu":
+            raise RuntimeError(
+                "GPU backend requested but unavailable. Install CuPy for your CUDA version "
+                "(e.g., `pip install cupy-cuda12x`) and verify `nvidia-smi` works."
+            ) from e
+        _use_cpu()
+        print(f"[Device][WARN] GPU unavailable; falling back to CPU ({e})")
+
+
+def to_cpu(a: Any) -> np.ndarray:
+    if GPU_ENABLED:
+        return XP.asnumpy(a)  # type: ignore[attr-defined]
+    return np.asarray(a)
+
 
 # ----------------------------- utilities -----------------------------
 
@@ -299,20 +366,23 @@ def sample_line_profile(img: np.ndarray,
     py = ux
 
     width = max(1, int(width))
+    img_dev = XP.asarray(img, dtype=float)
+    ys_dev = XP.asarray(ys, dtype=float)
+    xs_dev = XP.asarray(xs, dtype=float)
     if width == 1:
-        vals = map_coordinates(img, np.vstack([ys, xs]), order=1, mode="nearest")
-        return dist, xs, ys, vals
+        vals = ND_MAP_COORDINATES(img_dev, XP.vstack([ys_dev, xs_dev]), order=1, mode="nearest")
+        return dist, xs, ys, to_cpu(vals)
 
     half = (width - 1) / 2.0
     offs = np.linspace(-half, half, width)
     stack = []
     for o in offs:
-        xw = xs + o * px
-        yw = ys + o * py
-        stack.append(map_coordinates(img, np.vstack([yw, xw]), order=1, mode="nearest"))
-    stack = np.vstack(stack)
-    vals = np.median(stack, axis=0) if reducer == "median" else np.mean(stack, axis=0)
-    return dist, xs, ys, vals
+        xw = xs_dev + float(o) * float(px)
+        yw = ys_dev + float(o) * float(py)
+        stack.append(ND_MAP_COORDINATES(img_dev, XP.vstack([yw, xw]), order=1, mode="nearest"))
+    stack = XP.vstack(stack)
+    vals = XP.median(stack, axis=0) if reducer == "median" else XP.mean(stack, axis=0)
+    return dist, xs, ys, to_cpu(vals)
 
 
 # ----------------------------- plots + CSV -----------------------------
@@ -527,7 +597,13 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
         bg = estimate_background(img_raw, tile=args.bg_tile)
         img_bgsub = img_raw - bg
 
-        img_detect = gaussian_filter(img_bgsub, args.smooth) if args.smooth > 0 else img_bgsub
+        if args.smooth > 0:
+            if GPU_ENABLED:
+                img_detect = to_cpu(ND_GAUSSIAN_FILTER(XP.asarray(img_bgsub, dtype=float), args.smooth))
+            else:
+                img_detect = ND_GAUSSIAN_FILTER(img_bgsub, args.smooth)
+        else:
+            img_detect = img_bgsub
 
         zeroth = find_zeroth_order(
             img_detect=img_detect,
@@ -705,6 +781,8 @@ def main() -> int:
     # background
     ap.add_argument("--bg-tile", type=int, default=64)
     ap.add_argument("--smooth", type=float, default=1.0, help="Smoothing for detection image (bg-sub)")
+    ap.add_argument("--device", choices=["auto", "cpu", "gpu"], default="auto",
+                    help="Compute backend for heavy numeric ops.")
 
     # zeroth
     ap.add_argument("--zeroth-box-w", type=int, default=100)
@@ -731,6 +809,8 @@ def main() -> int:
                     help="Disable running star_streak detection on the extracted 1D profile.")
 
     args = ap.parse_args()
+    configure_compute_backend(args.device)
+    print(f"[Device] backend={BACKEND_LABEL}")
 
     if args.batch:
         data_dir = Path(args.data_dir)
