@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+numpy_venv/
+venv/
+.venv/
+env/
+
+# Matplotlib cache
+.mplconfig/
+
+# Logs
+*.log
+*.log.*
+
+# Environment secrets
+.env
+
+# Outputs (large, generated)
+outputs/
+outputs_capstone/
+
+# Docker build cache
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
