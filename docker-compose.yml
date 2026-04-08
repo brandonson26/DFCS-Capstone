@@ -1,11 +1,13 @@
 services:
+
+  # ── PostgreSQL database ──────────────────────────────────────────────────────
   postgres:
     image: postgres:16
     container_name: capstone-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-capstone_db}
-      POSTGRES_USER: ${DB_USER:-capstone_user}
+      POSTGRES_DB:       ${DB_NAME:-capstone_db}
+      POSTGRES_USER:     ${DB_USER:-capstone_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-capstone_pass}
     ports:
       - "${DB_PORT:-5432}:5432"
@@ -18,49 +20,61 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── File watcher + capstone pipeline (GPU) ───────────────────────────────────
   watcher:
-    image: python:3.12-slim
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: capstone-watcher
     container_name: capstone-watcher
     restart: unless-stopped
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-capstone_db}
-      DB_USER: ${DB_USER:-capstone_user}
+      DB_HOST:     postgres
+      DB_PORT:     5432
+      DB_NAME:     ${DB_NAME:-capstone_db}
+      DB_USER:     ${DB_USER:-capstone_user}
       DB_PASSWORD: ${DB_PASSWORD:-capstone_pass}
-      WATCH_PATH: /srv/FITSfileDropFolder
-      OUTDIR: /app/outputs
-    working_dir: /app
     volumes:
+      # Project code (live — edits on host are reflected immediately)
       - .:/app
+      # Shared drop folder: drop FITS files here from the host
       - ./FITSfileDropFolder:/srv/FITSfileDropFolder
+      # Outputs written by the pipeline
+      - ./outputs_capstone:/app/outputs_capstone
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      bash -lc "pip install --no-cache-dir watchdog python-dotenv scipy astropy matplotlib numpy scikit-image psycopg2-binary && python3 IncomingFileEventHandler.py --watch-path $${WATCH_PATH} --outdir $${OUTDIR}"
+    # GPU access — requires NVIDIA Container Toolkit on the host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
+  # ── Web dashboard ────────────────────────────────────────────────────────────
   webapp:
-    image: python:3.12-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.webapp
+    image: capstone-webapp
     container_name: capstone-webapp
     restart: unless-stopped
     environment:
-      WEB_HOST: 0.0.0.0
-      WEB_PORT: 8000
-      WEB_DEBUG: "false"
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-capstone_db}
-      DB_USER: ${DB_USER:-capstone_user}
+      WEB_HOST:    0.0.0.0
+      WEB_PORT:    8000
+      WEB_DEBUG:   "false"
+      DB_HOST:     postgres
+      DB_PORT:     5432
+      DB_NAME:     ${DB_NAME:-capstone_db}
+      DB_USER:     ${DB_USER:-capstone_user}
       DB_PASSWORD: ${DB_PASSWORD:-capstone_pass}
-    working_dir: /app
     volumes:
       - .:/app
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      bash -lc "pip install --no-cache-dir flask psycopg2-binary python-dotenv && python3 db/webapp.py"
     ports:
       - "8000:8000"
 

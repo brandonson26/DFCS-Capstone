@@ -1,0 +1,11 @@
+numpy
+scipy
+matplotlib
+astropy
+psycopg2-binary
+python-dotenv
+watchdog
+flask
+cupy-cuda12x
+nvidia-cuda-nvrtc-cu12
+nvidia-cuda-runtime-cu12
