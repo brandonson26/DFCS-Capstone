@@ -44,7 +44,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # GPU access — requires NVIDIA Container Toolkit on the host
+    # GPU access — requires NVIDIA Container Toolkit on the host.
     deploy:
       resources:
         reservations:

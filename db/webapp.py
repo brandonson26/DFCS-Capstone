@@ -14,12 +14,10 @@ app = Flask(__name__)
 
 DEFAULT_OUTPUT_ROOT = os.getenv("OUTPUT_ROOT", "/app")
 SPECTRUM_IMAGE_NAME = "03_spectrum_pixel.png"
-SATELLITE_KEYWORDS = ["DTV10", "DIRECTV"]
-STAR_KEYWORDS = ["HD128998"]
 SECTION_LABELS = [
-    ("stars", "Stars"),
-    ("satellites", "Satellites"),
-    ("other", "Other"),
+    ("satellite", "Satellites"),
+    ("star", "Stars"),
+    ("unknown", "Unknown"),
 ]
 
 TEMPLATE = """<!doctype html>
@@ -93,6 +91,7 @@ FILE_DETAIL_TEMPLATE = """<!doctype html>
       <tr><td>HDU Index</td><td>{{ file.hdu_index }}</td></tr>
       <tr><td>Instrument</td><td>{{ file.instrument or '' }}</td></tr>
       <tr><td>Satellite</td><td>{{ file.satellite or '' }}</td></tr>
+      <tr><td>Object Type</td><td>{{ file.object_type or 'unknown' }}</td></tr>
       <tr><td>Quality Status</td><td>{{ file.quality_status }}</td></tr>
       <tr><td>Ingested At</td><td>{{ file.ingested_at }}</td></tr>
       <tr><td>Header (hdr_small)</td><td><pre>{{ file.hdr_small }}</pre></td></tr>
@@ -227,7 +226,7 @@ def _find_fits_path(raw_path: str | None) -> Path | None:
 
 
 def _build_row_dict(file_row: tuple) -> dict:
-    file_id, path, quality_status, instrument, satellite, ingested_at, sha256 = file_row
+    file_id, path, quality_status, instrument, satellite, object_type, ingested_at, sha256 = file_row
     dest_dirs = _latest_run_dest_dirs(file_id)
     png_abs_path = _find_png_in_runs(dest_dirs)
 
@@ -237,7 +236,7 @@ def _build_row_dict(file_row: tuple) -> dict:
         "quality_status": quality_status,
         "instrument": instrument,
         "satellite": satellite,
-        "category": _classify_category(satellite),
+        "object_type": object_type or "unknown",
         "ingested_at": str(ingested_at),
         "sha256": sha256,
         "png_url": f"/file-plot/{file_id}" if png_abs_path else None,
@@ -251,7 +250,7 @@ def _get_file_by_id(file_id: int) -> dict | None:
             cur.execute(
                 """
                 SELECT id, path, sha256, hdu_index, instrument, satellite,
-                       quality_status, ingested_at, hdr_small
+                       object_type, quality_status, ingested_at, hdr_small
                 FROM files
                 WHERE id = %s
                 """,
@@ -262,7 +261,7 @@ def _get_file_by_id(file_id: int) -> dict | None:
     if not row:
         return None
 
-    file_id, path, sha256, hdu_index, instrument, satellite, quality_status, ingested_at, hdr_small = row
+    file_id, path, sha256, hdu_index, instrument, satellite, object_type, quality_status, ingested_at, hdr_small = row
     dest_dirs = _latest_run_dest_dirs(file_id)
     png_abs_path = _find_png_in_runs(dest_dirs)
 
@@ -273,6 +272,7 @@ def _get_file_by_id(file_id: int) -> dict | None:
         "hdu_index": hdu_index,
         "instrument": instrument,
         "satellite": satellite,
+        "object_type": object_type or "unknown",
         "quality_status": quality_status,
         "ingested_at": str(ingested_at),
         "hdr_small": json.dumps(hdr_small, indent=2, sort_keys=True) if hdr_small is not None else "{}",
@@ -281,27 +281,12 @@ def _get_file_by_id(file_id: int) -> dict | None:
     }
 
 
-def _normalize_for_match(value: str | None) -> str:
-    if value is None:
-        return ""
-    return str(value).upper().strip()
-
-
-def _classify_category(satellite: str | None) -> str:
-    normalized = _normalize_for_match(satellite)
-    if any(keyword in normalized for keyword in STAR_KEYWORDS):
-        return "stars"
-    if any(keyword in normalized for keyword in SATELLITE_KEYWORDS):
-        return "satellites"
-    return "other"
-
-
 def _latest_files(limit: int):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, path, quality_status, instrument, satellite, ingested_at, sha256
+                SELECT id, path, quality_status, instrument, satellite, object_type, ingested_at, sha256
                 FROM files
                 ORDER BY ingested_at DESC
                 LIMIT %s
@@ -314,9 +299,12 @@ def _latest_files(limit: int):
 
 def recent_sections(limit: int = 25):
     rows = _latest_files(limit)
-    grouped = {label: [] for label, _ in SECTION_LABELS}
+    grouped = {key: [] for key, _ in SECTION_LABELS}
     for row in rows:
-        grouped[row["category"]].append(row)
+        obj_type = row.get("object_type", "unknown")
+        if obj_type not in grouped:
+            obj_type = "unknown"
+        grouped[obj_type].append(row)
 
     return [
         {"label": label, "rows": grouped[key]}
@@ -384,7 +372,7 @@ def files_page():
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, path, quality_status, instrument, satellite, ingested_at, sha256 FROM files ORDER BY ingested_at DESC LIMIT 500"
+                    "SELECT id, path, quality_status, instrument, satellite, object_type, ingested_at, sha256 FROM files ORDER BY ingested_at DESC LIMIT 500"
                 )
                 rows = cur.fetchall()
         return jsonify([_build_row_dict(r) for r in rows])

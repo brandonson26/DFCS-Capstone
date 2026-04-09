@@ -70,18 +70,20 @@ DFCS-Capstone/
 ├── capstone.py                   # Main pipeline: load, detect, extract, flag, route
 ├── find_zeroth_order.py          # Zeroth order detection (integral image + compact flux scoring)
 ├── find_first_order.py           # First order detection (above/below search boxes)
+├── tle_catalog.py                # TLE catalog parser — classifies objects as satellite/star/unknown
+├── TLEs_202512231.txt            # TLE catalog of known satellites
 ├── background_gradient.py        # Background gradient quality flag
 ├── low_snr.py                    # Low signal-to-noise quality flag
 ├── overexposure.py               # Overexposure quality flag
 ├── partial_first_order.py        # Partial first order quality flag
-├── star_streak.py                # Star streak quality flag
+├── star_streak.py                # Star streak quality flag (satellites only)
 ├── ImagesWatcher.py              # Filesystem event handler (watchdog)
 ├── IncomingFileEventHandler.py   # Folder watcher entry point + thread pool
 ├── db/
 │   ├── db.py                     # PostgreSQL connection + upsert logic
 │   ├── migrate.py                # Schema migration runner
 │   ├── schema.sql                # Database table definitions
-│   └── webapp.py                 # Flask web dashboard
+│   └── webapp.py                 # Flask web dashboard (Satellites / Stars sections)
 ├── Dockerfile                    # Watcher/pipeline container (CUDA-enabled)
 ├── Dockerfile.webapp             # Web dashboard container (lightweight)
 ├── docker-compose.yml            # Orchestrates postgres + watcher + webapp
@@ -99,8 +101,18 @@ DFCS-Capstone/
 ### 1. File Watcher — `IncomingFileEventHandler.py`
 Watches `FITSfileDropFolder/` using the `watchdog` library. When a `.fit` or `.fits` file appears, it waits for the file to finish copying (stable size + modification time), then submits it to a thread pool (up to 4 parallel workers). A debounce mechanism prevents duplicate processing.
 
-### 2. FITS Loading — `capstone.py`
+### 2. FITS Loading & Object Classification — `capstone.py` + `tle_catalog.py`
 Opens the file with `astropy.io.fits`, auto-selects the best image HDU (largest 2D numeric array), and extracts header metadata (exposure time, instrument, satellite name, object name). Runs header plausibility checks.
+
+The `OBJECT` field from the header is immediately classified against `TLEs_202512231.txt`:
+
+| Result | Meaning |
+|---|---|
+| `satellite` | Object name matches an entry in the TLE catalog |
+| `star` | Object name is present but not in the TLE catalog |
+| `unknown` | No `OBJECT` header field present |
+
+Matching is fuzzy — hyphens, spaces, and underscores are stripped before comparison, and common abbreviations (e.g. `DTV10` → DIRECTV-10) are resolved via a built-in alias table. This classification flows through the entire pipeline: it controls which quality checks run, what quality status is assigned, and which section of the database and web dashboard the result appears under.
 
 ### 3. Background Subtraction
 Divides the image into a 64×64 tile grid, takes the median of each tile (resistant to bright sources), bilinearly interpolates back to full resolution, and subtracts it. This removes sky background and sensor gradients leaving only the astronomical signal.
@@ -128,15 +140,17 @@ Draws an extraction line edge-to-edge across the image:
 Samples a 5-pixel-wide swath perpendicular to the line using bilinear interpolation (GPU-accelerated), averaging across the width. Produces a 1D flux profile: distance along line vs. flux.
 
 ### 8. Quality Flags
-Five independent checks run on every file:
+Checks run depending on object type:
 
-| Flag | What it checks |
-|---|---|
-| `star_streak` | Multiple sharp peaks in the 1D profile — a star crossed the field during exposure |
-| `overexposure` | Saturated pixels in the zeroth order region |
-| `partial_first_order` | Flux drops at the end of the spectrum — first order cut off by the image edge |
-| `background_gradient` | Smooth brightness slope across the whole image (moonlight, scattered light) |
-| `low_snr` | Signal-to-noise ratio below threshold in the extracted spectrum |
+| Flag | Satellites | Stars | What it checks |
+|---|---|---|---|
+| `star_streak` | Yes | No | Multiple sharp peaks in the 1D profile — a star crossed the field during exposure |
+| `overexposure` | Yes | Yes | Saturated pixels in the zeroth order region |
+| `partial_first_order` | Yes | Yes | Flux drops at the end of the spectrum — first order cut off by the image edge |
+| `background_gradient` | Yes | Yes | Smooth brightness slope across the whole image (moonlight, scattered light) |
+| `low_snr` | Yes | Yes | Signal-to-noise ratio below threshold in the extracted spectrum |
+
+Star streak is skipped for stars because stars do not produce satellite streaks. As a result, stars are never assigned a `contaminated` quality status — only satellites can be contaminated.
 
 ### 9. Output Routing
 The spectrum PNG is copied into folders named by quality flag:
@@ -156,12 +170,42 @@ A file with multiple flags is copied into all matching folders simultaneously.
 ### 10. Database Write — `db/db.py`
 Every result is upserted into PostgreSQL:
 - SHA-256 hash of the FITS file used as unique key — re-processing the same file updates the existing record
-- `files` table — path, instrument, satellite, quality status, header metadata
+- `files` table — path, instrument, satellite, `object_type`, quality status, header metadata
 - `file_flags` table — one row per flag with boolean value and diagnostic metrics
 - `runs` table — output directory locations for each processing run
 
 ### 11. Web Dashboard — `db/webapp.py`
-Flask web app at [http://localhost:8000](http://localhost:8000) — browse processed files, quality flags, and spectrum PNG thumbnails.
+Flask web app at [http://localhost:8000](http://localhost:8000). Results are displayed in two separate sections driven by the `object_type` field in the database:
+
+- **Satellites** — objects matched against the TLE catalog
+- **Stars** — objects with a name not found in the TLE catalog
+- **Unknown** — objects with no `OBJECT` header
+
+Each row shows the spectrum PNG thumbnail, quality status, a download link for the original FITS file, and a detail page with all flags and header metadata.
+
+---
+
+## TLE Catalog & Object Classification
+
+The file `TLEs_202512231.txt` contains the Two-Line Element (TLE) set for every satellite the telescope is tasked to observe. The pipeline reads this file at startup and uses it to automatically classify every incoming FITS file.
+
+**Current satellites in the catalog (17):**
+GALAXY-3C, DIRECTV-10, DIRECTV-11, DIRECTV-12, DIRECTV-14, DIRECTV-15, SKYTERRA-1, SES-3, SES-20, SES-18, ECHOSTAR-10, ECHOSTAR-11, ANIK-F2, AMC-11, WILDBLUE-1, MEXSAT-3, AT&T-T16
+
+**Adding a new satellite:**
+Add its 3-line TLE block (name + two data lines) anywhere in `TLEs_202512231.txt` and rebuild the Docker image:
+```bash
+docker compose build watcher
+docker compose up -d watcher
+```
+
+**Adding a header abbreviation alias:**
+If a FITS file uses a short name (e.g. `DTV10` instead of `DIRECTV-10`) that doesn't fuzzy-match the TLE catalog, add it to the `_ALIASES` set in `tle_catalog.py`:
+```python
+_ALIASES: FrozenSet[str] = frozenset(_normalize(a) for a in [
+    "DTV10", "DTV11", ...   # add your abbreviation here
+])
+```
 
 ---
 
@@ -193,12 +237,12 @@ DB_PASSWORD=capstone_pass
 
 ## Database Management
 
-Apply schema updates after pulling new changes:
+**Apply schema updates** after pulling new changes (safe — uses `IF NOT EXISTS`, will not delete data):
 ```bash
-docker compose exec postgres psql -U capstone_user -d capstone_db -f /docker-entrypoint-initdb.d/001_schema.sql
+docker compose exec watcher python3 db/migrate.py
 ```
 
-Reset the database (warning — deletes all data):
+**Reset the database** (warning — deletes all data):
 ```bash
 docker compose down -v
 docker compose up -d
@@ -208,3 +252,11 @@ If you get `password authentication failed` after a compose recreate, reset the 
 ```bash
 docker compose down -v && docker compose up -d
 ```
+
+**Schema overview:**
+
+| Table | Key columns |
+|---|---|
+| `files` | `path`, `sha256`, `object_type`, `quality_status`, `hdr_small` |
+| `file_flags` | `file_id`, `flag_id`, `value`, `info` (JSON diagnostics) |
+| `runs` | `file_id`, `outdir`, `run_name`, `dest_dirs` |

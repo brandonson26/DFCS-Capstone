@@ -68,18 +68,20 @@ def upsert_file(
     hdu_index: Optional[int],
     instrument: Optional[str],
     satellite: Optional[str],
+    object_type: str,
     quality_status: str,
     hdr_small: Optional[Dict[str, Any]],
 ) -> int:
     cur.execute(
         """
-        INSERT INTO files(path, sha256, hdu_index, instrument, satellite, quality_status, hdr_small)
-        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+        INSERT INTO files(path, sha256, hdu_index, instrument, satellite, object_type, quality_status, hdr_small)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
         ON CONFLICT (sha256) DO UPDATE SET
           path = EXCLUDED.path,
           hdu_index = EXCLUDED.hdu_index,
           instrument = EXCLUDED.instrument,
           satellite = EXCLUDED.satellite,
+          object_type = EXCLUDED.object_type,
           quality_status = EXCLUDED.quality_status,
           hdr_small = EXCLUDED.hdr_small,
           ingested_at = NOW()
@@ -91,6 +93,7 @@ def upsert_file(
             hdu_index,
             instrument,
             satellite,
+            object_type,
             quality_status,
             json.dumps(hdr_small or {}),
         ),
@@ -151,6 +154,7 @@ def write_result_to_db(
     flag_infos: Dict[str, Any],
     instrument: Optional[str] = None,
     satellite: Optional[str] = None,
+    object_type: str = "unknown",
 ) -> None:
     digest = sha256_file(fits_path)
 
@@ -163,6 +167,7 @@ def write_result_to_db(
                 hdu_index,
                 instrument,
                 satellite,
+                object_type,
                 quality_status,
                 hdr_small,
             )

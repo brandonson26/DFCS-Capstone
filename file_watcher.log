@@ -1,2 +1,192 @@
-2026-03-18 09:35:17,322 FolderWatcher INFO Starting watcher: path=/home/brandonjson/CapstoneLocalDev/FITSfileDropFolder recursive=True max_workers=4
-2026-03-18 11:03:13,666 FolderWatcher INFO Starting watcher: path=/home/brandonjson/CapstoneLocalDev/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 03:04:32,306 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 03:13:18,999 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:13:20,830 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:13:27,700 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:13:32,979 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:13:34,815 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:13:38,823 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:20:12,177 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:20:14,006 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:20:15,723 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:20:25,281 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:20:27,834 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:20:28,417 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:21:34,184 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 03:22:17,302 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/test_rerun_097654.fit
+2026-04-08 03:22:30,042 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/test_rerun_097654.fit
+2026-04-08 03:24:14,570 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:24:16,286 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:24:17,780 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:24:27,283 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:24:30,383 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:24:31,058 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:36:40,209 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 03:37:52,645 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:37:52,657 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:37:52,669 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:38:07,603 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:38:08,041 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:38:08,205 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:42:41,258 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 03:43:02,803 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:43:04,386 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:43:06,612 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:43:16,474 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:43:18,398 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:43:19,527 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:43:57,613 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:44:08,999 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:54:38,427 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 03:56:30,725 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:56:30,745 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:56:30,757 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:56:46,107 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 03:56:46,308 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 03:56:46,359 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0002TG100.fit
+2026-04-08 03:57:40,041 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 04:00:40,173 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 04:00:40,439 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/755755_DTV10-0002TG100.fit
+2026-04-08 04:00:43,930 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 04:00:55,199 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 04:00:55,418 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/755755_DTV10-0002TG100.fit
+2026-04-08 04:00:56,613 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 04:02:25,289 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:02:25,305 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/097654_DTV10-0001TG200.fit
+2026-04-08 04:02:25,311 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:02:40,300 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/097654_DTV10-0001TG200.fit
+2026-04-08 04:02:40,306 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:02:40,309 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:05:57,197 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/456777_DTV10-0002TG100.fit
+2026-04-08 04:05:57,207 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/557557_DTV10-0001TG100.fit
+2026-04-08 04:05:57,219 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/557557_DTV10-0002TG100.fit
+2026-04-08 04:06:12,075 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/456777_DTV10-0002TG100.fit
+2026-04-08 04:06:12,090 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/557557_DTV10-0001TG100.fit
+2026-04-08 04:06:12,253 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/557557_DTV10-0002TG100.fit
+2026-04-08 04:06:50,753 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:06:50,781 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:06:50,798 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:07:05,436 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:07:05,647 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:07:05,658 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:07:26,399 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:07:37,500 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:10:08,357 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:10:08,402 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:10:21,130 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:10:21,331 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:17:40,877 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:17:40,883 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:17:54,828 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:17:54,831 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:23:08,042 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:23:08,049 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:23:21,215 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:23:21,422 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:26:14,693 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:26:14,699 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:26:28,060 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:26:28,120 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:27:08,808 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/719719_DTV10-0001TG200.fit
+2026-04-08 04:27:08,815 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/917917_DTV10-0001TG200.fit
+2026-04-08 04:27:08,829 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/ATT-T16_SF-0002TG100.fit
+2026-04-08 04:27:24,518 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/719719_DTV10-0001TG200.fit
+2026-04-08 04:27:24,523 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/ATT-T16_SF-0002TG100.fit
+2026-04-08 04:27:24,530 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/917917_DTV10-0001TG200.fit
+2026-04-08 04:38:26,626 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 04:38:42,178 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:38:42,186 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:38:56,237 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 04:38:56,317 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 04:40:27,889 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:40:27,895 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/ATT-T16_SF-0002TG100.fit
+2026-04-08 04:40:41,193 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 04:40:41,423 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/ATT-T16_SF-0002TG100.fit
+2026-04-08 05:12:29,840 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 05:14:43,804 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 05:14:43,825 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/097654_DTV10-0001TG200.fit
+2026-04-08 05:14:43,844 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 05:14:43,856 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/456777_DTV10-0002TG100.fit
+2026-04-08 05:14:43,877 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/557557_DTV10-0001TG100.fit
+2026-04-08 05:14:43,890 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/557557_DTV10-0002TG100.fit
+2026-04-08 05:14:43,911 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 05:14:43,923 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/719719_DTV10-0001TG200.fit
+2026-04-08 05:14:43,943 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/755755_DTV10-0002TG100.fit
+2026-04-08 05:14:43,961 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 05:14:43,993 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 05:14:44,027 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/917917_DTV10-0001TG200.fit
+2026-04-08 05:14:44,050 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/ATT-T16_SF-0002TG100.fit
+2026-04-08 05:15:09,592 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 05:15:09,686 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 05:15:09,862 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/456777_DTV10-0002TG100.fit
+2026-04-08 05:15:09,919 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/097654_DTV10-0001TG200.fit
+2026-04-08 05:15:34,121 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/557557_DTV10-0001TG100.fit
+2026-04-08 05:15:34,420 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 05:15:34,697 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/557557_DTV10-0002TG100.fit
+2026-04-08 05:15:34,828 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/719719_DTV10-0001TG200.fit
+2026-04-08 05:15:58,101 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 05:15:58,731 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/755755_DTV10-0002TG100.fit
+2026-04-08 05:15:59,541 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 05:15:59,778 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/917917_DTV10-0001TG200.fit
+2026-04-08 05:16:14,717 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/ATT-T16_SF-0002TG100.fit
+2026-04-08 05:21:04,356 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 05:21:46,550 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit
+2026-04-08 05:21:46,567 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 05:21:46,607 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 05:22:08,684 FolderWatcher ERROR Processing FAILED: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit (local variable 'zeroth_dist' referenced before assignment)
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/app/IncomingFileEventHandler.py", line 310, in _process_one_file
+    self.processor(path)
+  File "/app/IncomingFileEventHandler.py", line 447, in _capstone_processor
+    rc = process_one_file(p, cap_args)
+  File "/app/capstone.py", line 796, in process_one_file
+    zeroth_order_dist=zeroth_dist,
+UnboundLocalError: local variable 'zeroth_dist' referenced before assignment
+2026-04-08 05:22:08,966 FolderWatcher ERROR Processing FAILED: /srv/FITSfileDropFolder/654321_HD150933-0002TG200.fit (local variable 'zeroth_dist' referenced before assignment)
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/app/IncomingFileEventHandler.py", line 310, in _process_one_file
+    self.processor(path)
+  File "/app/IncomingFileEventHandler.py", line 447, in _capstone_processor
+    rc = process_one_file(p, cap_args)
+  File "/app/capstone.py", line 796, in process_one_file
+    zeroth_order_dist=zeroth_dist,
+UnboundLocalError: local variable 'zeroth_dist' referenced before assignment
+2026-04-08 05:22:08,996 FolderWatcher ERROR Processing FAILED: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit (local variable 'zeroth_dist' referenced before assignment)
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/app/IncomingFileEventHandler.py", line 310, in _process_one_file
+    self.processor(path)
+  File "/app/IncomingFileEventHandler.py", line 447, in _capstone_processor
+    rc = process_one_file(p, cap_args)
+  File "/app/capstone.py", line 796, in process_one_file
+    zeroth_order_dist=zeroth_dist,
+UnboundLocalError: local variable 'zeroth_dist' referenced before assignment
+2026-04-08 05:23:10,445 FolderWatcher INFO Starting watcher: path=/srv/FITSfileDropFolder recursive=True max_workers=4
+2026-04-08 05:23:42,773 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 05:23:42,807 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 05:23:42,841 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/719719_DTV10-0001TG200.fit
+2026-04-08 05:24:04,974 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 05:24:05,587 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 05:24:05,631 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/719719_DTV10-0001TG200.fit
+2026-04-08 16:50:39,715 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/917917_DTV10-0001TG200.fit
+2026-04-08 16:50:39,733 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 16:50:39,764 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/456777_DTV10-0002TG100.fit
+2026-04-08 16:50:59,914 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0001TG100.fit
+2026-04-08 16:51:00,917 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/456777_DTV10-0002TG100.fit
+2026-04-08 16:51:00,953 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/917917_DTV10-0001TG200.fit
+2026-04-08 16:51:29,892 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 16:51:29,915 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/097654_DTV10-0001TG200.fit
+2026-04-08 16:51:48,835 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/097654_DTV10-0001TG200.fit
+2026-04-08 16:51:48,846 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/123456_HD128998_20250710_USAFA-0001TG100.fit
+2026-04-08 16:53:08,650 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/755755_DTV10-0002TG100.fit
+2026-04-08 16:53:23,897 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/755755_DTV10-0002TG100.fit
+2026-04-08 16:53:41,962 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 16:53:57,238 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/777777_DTV10-0003TG100.fit
+2026-04-08 16:54:05,287 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/557557_DTV10-0002TG100.fit
+2026-04-08 16:54:20,531 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/557557_DTV10-0002TG100.fit
+2026-04-08 16:54:25,083 FolderWatcher INFO Queued: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit
+2026-04-08 16:54:40,584 FolderWatcher INFO Processed OK: /srv/FITSfileDropFolder/010101_HIP80351-0002TG100.fit

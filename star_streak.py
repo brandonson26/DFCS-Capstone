@@ -40,7 +40,6 @@ def detect_star_streak(s, profile):
         return False, np.array([], dtype=int), profile.copy(), {}, []
 
     # Ensure an odd window <= len(profile)
-    # Your original logic: min(101, len(profile) - (len(profile) % 2 == 0))
     n = int(profile.size)
     window = min(101, n)
     if window % 2 == 0:

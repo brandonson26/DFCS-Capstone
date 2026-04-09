@@ -57,14 +57,17 @@ from scipy.ndimage import gaussian_filter, map_coordinates
 from find_zeroth_order import find_zeroth_order, BoxResult as ZerothBox
 from find_first_order import find_first_order, FirstOrderResult
 
-# NEW: partial first-order detector (photon-based)
-from partial_first_order import partial_first_order_photon_check, path_reaches_edge
+# partial first-order detector (horizontal edge probe)
+from partial_first_order import detect_partial_first_order, path_reaches_edge, save_partial_first_order_png
 
-# NEW: background gradient detector (whole-image)
+# background gradient detector (whole-image)
 from background_gradient import detect_background_gradient
 
-# NEW: low SNR detector (1D extracted spectrum)
+# low SNR detector (1D extracted spectrum)
 from low_snr import detect_low_snr
+
+# TLE catalog — classifies objects as satellite / star / unknown
+from tle_catalog import classify_object
 
 # optional: star streak detection on extracted 1D profile
 try:
@@ -180,7 +183,10 @@ def header_pick(hdr: fits.Header, candidates: List[str]) -> Optional[str]:
     return None
 
 
-def classify_quality(star_streak: bool) -> str:
+def classify_quality(star_streak: bool, object_type: str) -> str:
+    # Stars are never classified as contaminated — star streak check does not apply.
+    if object_type == "star":
+        return "useable"
     return "contaminated" if star_streak else "useable"
 
 
@@ -224,17 +230,13 @@ def _contains_any(value: Optional[str], terms: List[str]) -> bool:
     return any(term in text for term in terms)
 
 
-def is_satellite_observation(hdr: fits.Header) -> bool:
-    satellite_field = extract_satellite(hdr)
-    target_field = extract_target_name(hdr)
-    # Normalize and match known satellite naming patterns.
-    return _contains_any(satellite_field, ["DTV10", "DIRECTV"]) or _contains_any(target_field, ["DTV10", "DIRECTV"])
-
-
-def is_star_observation(hdr: fits.Header) -> bool:
-    target_field = extract_target_name(hdr)
-    # Star names are handled separately and do not use star-streak classification.
-    return _contains_any(target_field, ["HD128998"])
+def get_object_type(hdr: fits.Header) -> str:
+    """
+    Classify the observed object as 'satellite', 'star', or 'unknown'
+    by matching the OBJECT header value against the TLE catalog.
+    """
+    target = extract_target_name(hdr)
+    return classify_object(target)
 
 def header_plausibility(hdr: fits.Header) -> List[str]:
     notes: List[str] = []
@@ -320,6 +322,17 @@ def pick_image_hdu(hdul: fits.HDUList, ext_override: Optional[int]) -> int:
 
 
 # ----------------------------- line + spectrum -----------------------------
+
+def _project_onto_line(cx: float, cy: float,
+                       x1: float, y1: float,
+                       x2: float, y2: float) -> float:
+    """Return the signed distance along the line (x1,y1)→(x2,y2) of the projected point (cx,cy)."""
+    dx, dy = x2 - x1, y2 - y1
+    L = float(np.hypot(dx, dy))
+    if L < 1e-9:
+        return 0.0
+    return ((cx - x1) * dx + (cy - y1) * dy) / L
+
 
 def extend_line_to_image_edge(x0: float, y0: float, x1: float, y1: float, w: int, h: int) -> Tuple[float, float]:
     dx = x1 - x0
@@ -473,14 +486,17 @@ def save_points_and_line_png(outdir: Path,
     plt.close()
     return p
 
-def save_spectrum_png(outdir: Path, dist: np.ndarray, flux: np.ndarray) -> Path:
+def save_spectrum_png(outdir: Path, dist: np.ndarray, flux: np.ndarray, stem: str = "") -> Path:
     plt.figure(figsize=(9, 4))
     plt.plot(dist, flux)
     plt.xlabel("Distance along extraction path (pixels)")
     plt.ylabel("Flux (image units)")
     plt.title("Spectrum (DS9-like Plot2D)")
     plt.tight_layout()
-    p = outdir / "03_spectrum_pixel.png"
+    # Use a unique temp filename so parallel threads don't overwrite each other.
+    import threading
+    unique = f"_tmp_{stem}_{os.getpid()}_{threading.get_ident()}.png"
+    p = outdir / unique
     plt.savefig(p, dpi=170)
     plt.close()
     return p
@@ -699,22 +715,45 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
             w=args.zeroth_box_w
         )
 
-        x_start, y_start = point_before_zeroth(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, pre=args.pre)
-        x_end, y_end = extend_line_to_image_edge(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, w=W, h=H)
+        # ---- Classify object type from TLE catalog ----
+        object_type = get_object_type(hdr)  # 'satellite' | 'star' | 'unknown'
+        print(f"[ObjectType] {fits_path.name} classified as: {object_type}")
 
-        # If both first-order points are available (above + below), sample a
-        # full-image line through them so zeroth sits between both orders.
-        if first_res.above_point is not None and first_res.below_point is not None:
-            full_line = line_through_image_edges(
-                first_res.below_point.cx,
-                first_res.below_point.cy,
-                first_res.above_point.cx,
-                first_res.above_point.cy,
-                w=W,
-                h=H,
-            )
+        # ---- Set up extraction line ----
+        # Stars: keep zeroth/first-order detection, but draw an edge-to-edge
+        #        extraction line across the full image. Prefer the line through
+        #        BOTH first-order points (captures both sides of zeroth); if only
+        #        one first-order point is available, fall back to zeroth+first.
+        # Satellites/unknown: one-sided from just before the zeroth order to the
+        #        image edge in the direction of the BRIGHTER first order.
+        if object_type == "star":
+            full_line: Optional[Tuple[float, float, float, float]] = None
+
+            if first_res.above_point is not None and first_res.below_point is not None:
+                full_line = line_through_image_edges(
+                    first_res.below_point.cx, first_res.below_point.cy,
+                    first_res.above_point.cx, first_res.above_point.cy,
+                    w=W, h=H,
+                )
+
+            if full_line is None:
+                full_line = line_through_image_edges(
+                    zeroth.cx, zeroth.cy,
+                    first_pt.cx, first_pt.cy,
+                    w=W, h=H,
+                )
+
             if full_line is not None:
                 x_start, y_start, x_end, y_end = full_line
+            else:
+                # Extreme degenerate geometry fallback: horizontal full-width path.
+                y0 = float(np.clip(zeroth.cy, 0, H - 1))
+                x_start, y_start, x_end, y_end = 0.0, y0, float(W - 1), y0
+        else:
+            # Satellites: start before zeroth, extend to image edge in first-order direction.
+            # find_first_order already picked the brighter side via mean_above vs mean_below.
+            x_start, y_start = point_before_zeroth(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, pre=args.pre)
+            x_end, y_end = extend_line_to_image_edge(zeroth.cx, zeroth.cy, first_pt.cx, first_pt.cy, w=W, h=H)
 
         img_profile = img_raw if args.profile_on == "raw" else img_bgsub
         dist, xs, ys, flux = sample_line_profile(
@@ -722,25 +761,43 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
             width=args.width, step=args.step, reducer=args.reducer
         )
 
-        # ---- partial first-order check ----
+        # ---- partial first-order check (satellites only) ----
+        # At the far endpoint of the extraction path, sample a 200-px horizontal
+        # line (±100 px) and flag if any peak is ≥ 150 % of the background mean.
         reaches_edge, edge_dist_px = path_reaches_edge(xs, ys, W, H)
-        partial_first_order, pmet = partial_first_order_photon_check(
-            flux,
-            step=args.step,
-            pre=args.pre
-        )
+        partial_first_order = False
+        pmet: Dict[str, Any] = {}
+        _pfo_offsets = np.array([], dtype=float)
+        _pfo_values  = np.array([], dtype=float)
+        if object_type == "satellite":
+            partial_first_order, pmet, _pfo_offsets, _pfo_values = detect_partial_first_order(
+                img=img_raw,
+                x_end=x_end,
+                y_end=y_end,
+                W=W,
+                H=H,
+            )
         print(f"[EdgeCheck] reaches_edge={reaches_edge} edge_dist_px={edge_dist_px:.2f}")
         print(f"[PartialFirstOrder] partial={partial_first_order} "
-              f"ratio={pmet.get('ratio', 0.0):.3f} "
-              f"after_net={pmet.get('after_net', 0.0):.3g} "
-              f"end_net={pmet.get('end_net', 0.0):.3g} "
-              f"baseline={pmet.get('baseline', 0.0):.3g}")
+              f"bg_mean={pmet.get('bg_mean', 0.0):.3g} "
+              f"threshold={pmet.get('threshold', 0.0):.3g} "
+              f"n_peaks={pmet.get('n_peaks', 0)}")
+
+        # ---- Compute peak positions along the extraction line ----
+        zeroth_dist = _project_onto_line(
+            zeroth.cx, zeroth.cy, x_start, y_start, x_end, y_end)
+        first_order_dist = _project_onto_line(
+            first_pt.cx, first_pt.cy, x_start, y_start, x_end, y_end)
+        expected_dists: List[float] = [zeroth_dist, first_order_dist]
 
         # ---- low SNR check ----
+        _fo_dist = first_order_dist
         low_snr_flag, low_snr_info = detect_low_snr(
             flux,
             step=args.step,
-            pre=args.pre
+            pre=args.pre,
+            first_order_dist=_fo_dist,
+            zeroth_order_dist=zeroth_dist,
         )
         print(f"[LowSNR] low_snr={bool(low_snr_flag)} "
               f"snr_median={low_snr_info.get('snr_median', 0.0):.3f} "
@@ -752,29 +809,34 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
         print(f"[BGGrad] background_gradient={bool(bggrad_flag)} "
               f"plane_delta_counts={bggrad_info.get('plane_delta_counts', None)}")
 
-        # write the single canonical output (graph PNG) used by this pipeline
-        graph_png = save_spectrum_png(outdir, dist, flux)
+        # write spectrum PNG to a unique temp path (prevents parallel threads
+        # from overwriting each other when processing multiple files at once)
+        run_name = fits_path.stem
+        graph_png = save_spectrum_png(outdir, dist, flux, stem=run_name)
 
-        # star streak (optional)
-        is_satellite_target = is_satellite_observation(hdr)
-        is_star_target = is_star_observation(hdr)
-        run_star_streak = bool(is_satellite_target and not is_star_target)
+        # ---- Star streak (satellites only) ----
+        # Stars do not produce satellite streaks — skip this check for them.
+        run_star_streak = (object_type == "satellite")
         streak_flag = False
+        streak_info: Dict[str, Any] = {}
         if (not args.no_star_streak) and run_star_streak and (detect_star_streak is not None):
             try:
-                streak, peaks, smoothed, _props, valid_mask = detect_star_streak(dist, flux)
+                streak, peaks, smoothed, _props, valid_mask = detect_star_streak(
+                    dist, flux,
+                )
                 streak_flag = bool(streak)
-                # Keep star-streak detection internal-only for classification.
-                # Additional files are intentionally not emitted to satisfy single-output behavior.
+                streak_info = {
+                    "has_streak": streak_flag,
+                    "n_peaks": int(len(peaks)),
+                    "valid_mask": valid_mask,
+                }
+                print(f"[StarStreak] streak={streak_flag} n_peaks={len(peaks)}")
             except Exception as e:
                 print(f"[StarStreak][WARN] Failed on {fits_path.name}: {e}")
         elif not args.no_star_streak and run_star_streak and detect_star_streak is None:
             print("[StarStreak][WARN] star_streak.py not importable; skipping.")
-        elif not run_star_streak:
-            if is_star_target:
-                print(f"[StarStreak] skipped for {fits_path.name} (classified as star target; star-streak off)")
-            elif not is_satellite_target:
-                print(f"[StarStreak] skipped for {fits_path.name} (not a satellite-targeted file)")
+        else:
+            print(f"[StarStreak] skipped for {fits_path.name} (object_type={object_type})")
 
         # bucket bases
         bucket_bases: List[Path] = []
@@ -788,17 +850,29 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
         if bool(low_snr_flag):
             bucket_bases.append(outdir / "low_snr")
 
-        run_name = fits_path.stem
         dest_dirs = [b / run_name for b in bucket_bases]
         for d in dest_dirs:
             ensure_dir(d)
 
-    quality_status = classify_quality(streak_flag)
+        # Save partial first-order diagnostic graph into every destination folder.
+        if object_type == "satellite" and _pfo_offsets.size > 0:
+            for d in dest_dirs:
+                save_partial_first_order_png(
+                    dest_dir=d,
+                    offsets=_pfo_offsets,
+                    values=_pfo_values,
+                    bg_mean=pmet.get("bg_mean", 0.0),
+                    threshold=pmet.get("threshold", 0.0),
+                    is_partial=bool(partial_first_order),
+                )
 
-    # ---- DB write (v4) ----
+    quality_status = classify_quality(streak_flag, object_type)
+
+    # ---- DB write ----
     write_result_to_db(
             instrument=extract_instrument(hdr),
             satellite=extract_satellite(hdr),
+            object_type=object_type,
             fits_path=fits_path,
             hdu_index=hdu_index,
             hdr_small=hdr_small,
@@ -814,30 +888,29 @@ def process_one_file(fits_path: Path, args: argparse.Namespace) -> int:
                 "low_snr": bool(low_snr_flag),
             },
             flag_infos={
+                "star_streak": streak_info,
                 "overexposure": over_info,
                 "partial_first_order": pmet,
                 "background_gradient": bggrad_info,
                 "low_snr": low_snr_info,
             },
         )
-    # Copy only the primary graph output into all destination folders.
-    files_to_route = [graph_png]
 
-    # copy into each destination folder (supports multi-flag routing)
+    # Copy the spectrum PNG into each destination folder as the canonical name,
+    # then delete the unique temp file.
+    SPECTRUM_OUTPUT_NAME = "03_spectrum_pixel.png"
     for d in dest_dirs:
-        for p in files_to_route:
-            if p.exists():
-                shutil.copy2(str(p), str(d / p.name))
+        if graph_png.exists():
+            shutil.copy2(str(graph_png), str(d / SPECTRUM_OUTPUT_NAME))
 
-    # cleanup root files after routing
-    for p in files_to_route:
-        try:
-            if p.exists():
-                p.unlink()
-        except Exception:
-            pass
+    try:
+        if graph_png.exists():
+            graph_png.unlink()
+    except Exception:
+        pass
 
-    print(f"[Done] {fits_path.name} | star_streak={streak_flag} | overexposure={bool(is_over)} "
+    print(f"[Done] {fits_path.name} | object_type={object_type} | quality={quality_status} "
+          f"| star_streak={streak_flag} | overexposure={bool(is_over)} "
           f"| partial_first_order={bool(partial_first_order)} | background_gradient={bool(bggrad_flag)} "
           f"| low_snr={bool(low_snr_flag)}")
 
@@ -876,7 +949,7 @@ def main() -> int:
     ap.add_argument("--first-inner-h", type=int, default=21)
 
     # extraction line + sampling
-    ap.add_argument("--pre", type=float, default=30.0, help="Pixels to start before zeroth along the line")
+    ap.add_argument("--pre", type=float, default=200.0, help="Pixels to start before zeroth along the line")
     ap.add_argument("--profile-on", choices=["raw", "bgsub"], default="bgsub")
     ap.add_argument("--width", type=int, default=5, help="Line width averaged perpendicular to path (DS9-like)")
     ap.add_argument("--reducer", choices=["mean", "median"], default="mean")

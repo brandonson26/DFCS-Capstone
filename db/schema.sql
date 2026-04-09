@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS files (
   hdu_index INT,
   instrument TEXT,
   satellite TEXT,
+  object_type TEXT NOT NULL DEFAULT 'unknown' CHECK (object_type IN ('satellite', 'star', 'unknown')),
   quality_status TEXT NOT NULL DEFAULT 'useable' CHECK (quality_status IN ('useable', 'contaminated')),
   ingested_at TIMESTAMPTZ DEFAULT NOW(),
   hdr_small JSONB
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS files_quality_status_idx ON files (quality_status);
 CREATE INDEX IF NOT EXISTS files_instrument_idx ON files (instrument);
 CREATE INDEX IF NOT EXISTS files_satellite_idx ON files (satellite);
+CREATE INDEX IF NOT EXISTS files_object_type_idx ON files (object_type);
 
 CREATE TABLE IF NOT EXISTS flags (
   id SERIAL PRIMARY KEY,
